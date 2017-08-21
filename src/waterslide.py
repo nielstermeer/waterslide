@@ -29,18 +29,17 @@ def show_version(argn, argv):
 # "Main" function below here
 # ----
 
-helptext =  \
-'''
-Waterslide: Presentation build program, build around Reveal.js
+helptext = \
+'''Waterslide: Presentation build program, build around Reveal.js
 
 Usage: waterslide [options] [subcommand [options]]
 
 Main options:
 --version          Show version and exit
+-h, --help         Show this helptext and exit
 
 Subcommands:
-serve              Serve (a) presentation(s) over http
-'''
+serve              Serve (a) presentation(s) over http'''
 
 # commandline defaults
 subcmd = no_func
@@ -48,9 +47,12 @@ subcmd = no_func
 # start parsing arguments
 i = 1
 while i < len(sys.argv):
-	if sys.argv[i] in ("--version", "version"):
+	if sys.argv[i] == "--version":
 		subcmd = show_version
 		break
+	elif sys.argv[i] in ("-h", "--help"):
+		print(helptext)
+		sys.exit(0)
 	elif sys.argv[i] == "serve":
 		subcmd = serve.serve
 		break

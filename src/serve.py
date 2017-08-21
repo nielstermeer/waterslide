@@ -114,7 +114,7 @@ class multiple_presentations(base_presentation):
 def build_routing_table(preslist):
 	presdict = {}
 	for i in preslist:
-		presdict[i.slug()] = i
+		presdict[i.slug] = i
 	
 	return presdict
 
@@ -129,8 +129,7 @@ def serve(argn, argv):
 
 	preslist = list()
 	helptext = \
-'''
-Serve subcommand: Serve a presentation over HTTP
+'''Serve subcommand: Serve a presentation over HTTP
 
 Usage:
 serve [options] [presentations]
@@ -142,8 +141,7 @@ Options:
 -s, --single       Serve a single presentation in its own directory, instead
                    of directly in the root directory
 -v, --verbose      Be verbose
--h, --help         Show this helptext
-'''
+-h, --help         Show this helptext'''
 	
 	
 	# defaults
@@ -211,10 +209,10 @@ Options:
 					.format('/', obj.path)
 		else:
 			of = lambda obj: " (url: {:<15} source: '{}')"	\
-					.format('/' + obj.slug() + '/', obj.path)
+					.format('/' + obj.slug + '/', obj.path)
 	
 	for i in preslist:
-		print(" - {:<15}{}".format('"' + i.title() + '"', of(i)))
+		print(" - {:<15}{}".format('"' + i.title + '"', of(i)))
 		
 	print("on {}:{}".format(addresses, port))
 	# </> status output section

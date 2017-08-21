@@ -1,0 +1,35 @@
+# YAML Waterslide configuration options documentation file. It lists all the
+# recognised options, along with a description of said option. They are in
+# no particular order.
+
+# Resource provider for the Reveal.js Library, plugins and stylesheets.
+#
+# List of currently available providers:
+# - cdnjs
+# - github (points to raw.githubusercontent, of hakimel's repository at master)
+provider: cdnjs
+
+# Title configuration. Sets the title of the presentation, will be used in the
+# url and the title tag. If not set, Waterslide will default to the name of the
+# containing directory
+title: Hello World
+
+# Theme to use in the presentation. Can be anything which is in the css/themes
+# directory of your Reveal.js provider. It is not checked for existence pre-
+# presentation. If not configured, Waterslide will default to the black theme
+theme: black
+
+# List of styles to link into the presentation. Links to the styles will be
+# put in the head section of the document, after the required Reveal.js styles
+# If no styles have been specified, nothing extra will be linked
+#
+# SCSS stylesheets are fully supported through libsass-python, and they are
+# compiled upon request
+styles:
+ - 'foo.scss'
+ - 'bar.scss'
+
+# List of scripts to add to the presentation. Links to the scripts will be added
+# after the presentation, but before the link to the Reveal.js library.
+scripts:
+ - 'baz.js'

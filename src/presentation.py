@@ -63,21 +63,19 @@ class Presentation:
 	# it then stores the html inside an instance member, so that we don't have
 	# to repeatedly call these functions
 	def import_presentation(self, fname = "index.html", separator = "<!-- EOC -->"):
-		f = open(os.path.join(self.path, fname) , 'r')
+		with open(os.path.join(self.path, fname) , 'r') as f:
 		
-		fctnt = f.read()
+			fctnt = f.read()
 		
-		conf_and_html = re.split(separator, fctnt, 1)
+			conf_and_html = re.split(separator, fctnt, 1)
 		
-		self.html_mtime = os.path.getmtime(os.path.join(self.path, "index.html"))
+			self.html_mtime = os.path.getmtime(os.path.join(self.path, "index.html"))
 		
-		if len(conf_and_html) == 2:
-			self.config = self.parse_configuration(conf_and_html[0])
-			self.html = self.prepare_html(conf_and_html[1])
-		else:
-			self.html = self.prepare_html(fctnt)
-		
-		f.close()
+			if len(conf_and_html) == 2:
+				self.config = self.parse_configuration(conf_and_html[0])
+				self.html = self.prepare_html(conf_and_html[1])
+			else:
+				self.html = self.prepare_html(fctnt)
 	
 	## Function which figures out the title
 	# @param self	Object pointer
@@ -85,6 +83,7 @@ class Presentation:
 	#
 	# It first checks for a title member in the configuration, and when that
 	# fails, it defaults to the name of the directory
+	@property
 	def title(self):
 		return self.config.get("title") or \
 			 os.path.split(self.path)[-1]
@@ -101,6 +100,7 @@ class Presentation:
 		try:
 			conf = yaml.load(confstr) or {}
 			
+			# cdnjs is the default provider
 			provider = conf.get('provider', 'cdnjs')
 			
 			if provider not in self.providers.keys():
@@ -109,7 +109,7 @@ class Presentation:
 			else:
 				key = provider
 			
-			basepath = self.providers[key]
+			self.basepath = self.providers[key]
 			
 			return conf
 		except yaml.YAMLError as exc:
@@ -146,19 +146,18 @@ class Presentation:
 	#  required stylesheets
 	# @param self	Object pointer
 	# @return	String containing the links to the stylesheets
-	def get_stylesheet_links(self):
+	@property
+	def stylesheet_links(self):
 		
-		csss = ("/css/reveal.css",		# Default to the black theme
-			"/css/theme/{}.css".format(self.config.get("theme", "black")))
+		# stylesheets which are always needed. Default to black
+		# if no stylesheet was specified
+		csss = [self.basepath + "/css/reveal.css",		
+			self.basepath + "/css/theme/{}.css" \
+					.format(self.config.get("theme", "black"))]
 		
-		cssstring = ""
-		
-		for i in csss:
-			cssstring += self.link_stylesheet(self.basepath + i)
-		
-		cssstring += self.link_resources(self.link_stylesheet, self.config.get('styles'))
-		
-		return cssstring
+		return self.link_resources(self.link_stylesheet, 
+			csss + (self.config.get('styles') or []))
+
 	
 	## Construct the html
 	# @param self	Object pointer
@@ -169,20 +168,24 @@ class Presentation:
 	# of the presentation, such as the link generators. It also adds the
 	# the title in the head.
 	def prepare_html(self, base):
-		retval = "<!DOCTYPE html>"
-		retval += "<html><head><meta charset=\"utf-8\"/>"
-		retval += "<title>" + self.title() + "</title>"
-		retval += self.get_stylesheet_links()
-		retval +="</head><body>"
-		retval += "<div class=\"reveal\"><div class=\"slides\">"
-		retval += base
-		retval += "</div></div>"
-		retval += self.link_resources(self.link_javascript, self.config.get('scripts'))
-		retval += self.link_javascript(self.basepath + "/js/reveal.js")
-		retval += "<script>Reveal.initialize();</script>"
-		retval += "</body></html>"
 		
-		return retval
+		return str.join('',
+			(
+			"<!DOCTYPE html>",
+			"<html><head><meta charset=\"utf-8\"/>",
+			"<title>" + self.title + "</title>",
+			self.stylesheet_links,
+			"</head><body>",
+			"<div class=\"reveal\"><div class=\"slides\">",
+			base,
+			"</div></div>",
+			self.link_resources(self.link_javascript, 
+				(self.config.get('scripts') or []) +
+				[self.basepath + "/js/reveal.js"]),
+			"<script>Reveal.initialize();</script>",
+			"</body></html>",
+			)
+		)
 	
 	## Function which compiles a sass stylesheet
 	# @param self	Object pointer
@@ -207,6 +210,7 @@ class HTTP_Presentation(Presentation):
 	## Get the slug, to be used in the url
 	# @param self	Object pointer
 	# @return	Slug to be used in the url
+	@property
 	def slug(self):
 		return self.title().lower().replace(' ', '-')
 	
