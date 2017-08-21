@@ -38,3 +38,16 @@ scripts:
 # the library.
 init:
  transition: concave
+
+# This option lists the plugins which will be passed to Reveal.js
+# Available plugins are:
+# - marked
+# - markdown
+# - highlight
+# - zoom
+# - notes
+# - math
+# - search
+# - print-pdf
+plugins:
+ - highlight

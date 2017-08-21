@@ -3,9 +3,11 @@ theme: white
 styles:
  - 'foo.scss'
  - 'bar.scss'
+ - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/default.min.css # for highligh.js
 scripts:
  - 'baz.js'
-
+plugins:
+ - highlight
 init:
  transition: concave
 <!-- EOC -->
@@ -13,7 +15,11 @@ init:
 <h1>Hello World 2!</h1>
 </section>
 <section>
-<h1>Hello World!</h1>
+<pre><code class='lang-c'>
+int main(int argc, char **argv) { 
+	return 42;
+}
+</code></pre>
 </section>
 <section>
 <h1>Hello World!</h1>

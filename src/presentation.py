@@ -14,6 +14,27 @@ import serve
 #  @{
 #
 
+## dictionary of reveal plugins, and their associated objects
+reveal_plugins = {
+	# Interpret Markdown in <section> elements
+	'marked':'{ "src": "{}/plugin/markdown/marked.js", "condition": function() { return !!document.querySelector( \'[data-markdown]\' ); } }',
+	'markdown':'{ "src": "{}/plugin/markdown/markdown.js", "condition": function() { return !!document.querySelector( \'[data-markdown]\' ); } }',
+
+	# Syntax highlight for <code> elements
+	'highlight':'{ "src": "{}/plugin/highlight/highlight.js", "async": true, "callback": function() { hljs.initHighlightingOnLoad(); } }',
+
+	# Zoom in and out with Alt+click
+	'zoom':'{ "src": "{}/plugin/zoom-js/zoom.js", "async": true }',
+
+	# Speaker notes
+	'notes':'{ "src": "{}/plugin/notes/notes.js", "async": true }',
+	# MathJax
+	'math':'{ "src": "{}/plugin/math/math.js", "async": true }',
+	'search': '{ "src": "{}/plugin/search/search.js" }'
+	'print-pdf': '{ "src": "{}/plugin/print-pdf/print-pdf.js"}'
+}
+
+
 ## Main presentation class
 # this class is where the rest of the program is build around. It represents
 # the presentation which is stored on disk, while also performing operations
@@ -164,7 +185,17 @@ class Presentation:
 	# @return	Reveal.js json initialisation string
 	@property
 	def reveal_init_json(self):
-		return json.dumps(self.config.get('init') or {}, ensure_ascii=False)
+	
+		init = {**(self.config.get('init') or {}), **{"dependencies":[]}}
+		initstr = json.dumps(init, ensure_ascii=False)
+		
+		# get a string containing the plugin objects, separated by commas
+		# add the basepath
+		plugins = ','.join([reveal_plugins.get(k, "").replace('{}',self.basepath) 
+					for k in self.config.get('plugins') or []])
+		
+		# brute force the insertion of javascript into the object
+		return initstr.replace('"dependencies": []', "dependencies: [{}]".format(plugins))
 	
 	## Construct the html
 	# @param self	Object pointer
@@ -188,7 +219,10 @@ class Presentation:
 			"</div></div>",
 			self.link_resources(self.link_javascript, 
 				(self.config.get('scripts') or []) +
-				[self.basepath + "/js/reveal.js"]),
+				# only add head.js if we actually have plugins
+				([self.basepath + "/lib/js/head.min.js"] if (self.config.get('plugins')) else []) +
+				[self.basepath + "/js/reveal.js"]
+				),				
 			"<script>Reveal.initialize({});</script>".format(
 					self.reveal_init_json
 				),
@@ -291,9 +325,9 @@ class HTTP_Presentation(Presentation):
 	# to the document root, and that the source file of the request is
 	# within the presentation root.
 	#
-	# Consider the request http://baz.nl/foo/bar.scss, of the 'foo'
+	# Consider the request http:#define baz.nl/foo/bar.scss, of the 'foo'
 	# presentation. The request should then be preprocessed to
-	# http://baz.nl/bar.scss. This is to ensure that this class can be used
+	# http:#define baz.nl/bar.scss. This is to ensure that this class can be used
 	# either with one presentation, with all the files of the presentation
 	# root mapping to files in the "documen root", or with several
 	# presentation, with each presentation having its own subdirectory.
