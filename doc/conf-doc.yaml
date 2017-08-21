@@ -33,3 +33,8 @@ styles:
 # after the presentation, but before the link to the Reveal.js library.
 scripts:
  - 'baz.js'
+
+# Reveal.js initialisation structure. This structure is passed directly into
+# the library.
+init:
+ transition: concave

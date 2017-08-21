@@ -1,5 +1,6 @@
 import os
 import yaml
+import json
 import re
 from datetime import datetime
 from urllib.parse import urlparse
@@ -157,7 +158,13 @@ class Presentation:
 		
 		return self.link_resources(self.link_stylesheet, 
 			csss + (self.config.get('styles') or []))
-
+	
+	## Get the Reveal.js initialisation json string
+	# @param self	Object pointer
+	# @return	Reveal.js json initialisation string
+	@property
+	def reveal_init_json(self):
+		return json.dumps(self.config.get('init') or {}, ensure_ascii=False)
 	
 	## Construct the html
 	# @param self	Object pointer
@@ -168,7 +175,7 @@ class Presentation:
 	# of the presentation, such as the link generators. It also adds the
 	# the title in the head.
 	def prepare_html(self, base):
-		
+	
 		return str.join('',
 			(
 			"<!DOCTYPE html>",
@@ -182,7 +189,9 @@ class Presentation:
 			self.link_resources(self.link_javascript, 
 				(self.config.get('scripts') or []) +
 				[self.basepath + "/js/reveal.js"]),
-			"<script>Reveal.initialize();</script>",
+			"<script>Reveal.initialize({});</script>".format(
+					self.reveal_init_json
+				),
 			"</body></html>",
 			)
 		)
