@@ -6,3 +6,6 @@ __pycache__/
 # doxygen output
 html/
 latex/
+
+# virtualenv
+env/

@@ -2,10 +2,13 @@ import os
 import yaml
 import json
 import re
+import pytz
 from datetime import datetime
 from urllib.parse import urlparse
 import sass
 import serve
+from collections import namedtuple
+from aiohttp import web
 
 ##
 #  @defgroup presentation Presentation module
@@ -30,7 +33,7 @@ reveal_plugins = {
 	'notes':'{ "src": "{}/plugin/notes/notes.js", "async": true }',
 	# MathJax
 	'math':'{ "src": "{}/plugin/math/math.js", "async": true }',
-	'search': '{ "src": "{}/plugin/search/search.js" }'
+	'search': '{ "src": "{}/plugin/search/search.js" }',
 	'print-pdf': '{ "src": "{}/plugin/print-pdf/print-pdf.js"}'
 }
 
@@ -237,6 +240,12 @@ class Presentation:
 	def compile_sass(self, fname):
 		return sass.compile(filename=fname)
 
+## Named tuple used to abstract the framework's way of representing the response to a request. 
+#
+# Used in the request handlers, after which the request entrypoint converts
+# it to the framework's response representation. This is so that we don't have
+# to rewrite any of the request handlers whenever we change frameworks
+HTTP_Response	= namedtuple('HTTP_Response',	('code', 'headers', 'body'))
 
 ## Descendant of the Presentation class, which handles presentations served over http
 #
@@ -255,7 +264,7 @@ class HTTP_Presentation(Presentation):
 	# @return	Slug to be used in the url
 	@property
 	def slug(self):
-		return self.title().lower().replace(' ', '-')
+		return self.title.lower().replace(' ', '-')
 	
 	## Reload the presentation into memory
 	# @param self	Object pointer
@@ -269,21 +278,30 @@ class HTTP_Presentation(Presentation):
 	# @param filename	Source file of the request
 	# @return		Boolean if the the client has the resource cached,
 	#			so that the calling function knows what to do further
-	def client_has_cached(self, request, filename):
+	def client_has_cached(self, filename, request):
 		
-		LM = datetime.utcfromtimestamp(os.path.getmtime(filename)) \
-			.strftime('%a, %d %b %Y %H:%M:%S GMT')
+		lm = datetime.utcfromtimestamp(os.path.getmtime(filename)).replace(tzinfo=pytz.utc)
 		
-		if request.headers.get('If-Modified-Since') == LM:
-			request.send_response(304)
-			request.send_header("Cache-Control", "must-revalidate")
-			request.end_headers()
-			return True
-		else:
-			request.send_response(200)
-			request.send_header("Cache-Control", "must-revalidate")
-			request.send_header("Last-Modified", LM)
-			return False
+		if request.if_modified_since != None and \
+			request.if_modified_since.replace(tzinfo=pytz.utc) < lm.replace(tzinfo=pytz.utc):
+		
+			return HTTP_Response(
+				code = 304, 
+				headers = {
+					"Cache-Control":"must-revalidate"
+					},
+				body = ""
+				)
+		else:			
+			return HTTP_Response(
+				code = 200, 
+				headers = {
+					"Cache-Control":"must-revalidate",
+					"Last-Modified": lm.strftime('%a, %d %b %Y %H:%M:%S GMT')
+					},
+				body = ""
+				)
+			
 			
 	## Figure out the handler needed to process the current request
 	# @param self		Object pointer
@@ -293,111 +311,148 @@ class HTTP_Presentation(Presentation):
 	#
 	# It figures out the request handler based upon the url, and the
 	# the extension of the url
-	def figure_handler(self, request, url):
+	def figure_handler(self, path):
 			
-		if url.path == "":
+		if path == "":
 			return self.send_html
-		elif os.path.exists(os.path.join(self.path, url.path)):
+		elif os.path.exists(os.path.join(self.path, path)):
 			
-			ext = os.path.splitext(url.path)[1]
+			ext = os.path.splitext(path)[1]
 			
 			if ext == ".scss":
 				return self.send_sass
 			else:
 				return self.send_direct
 		else:
-			return None
+			return self.send_notfound
+	
+	## Log a request to stdout
+	# @param self		Object pointer
+	# @param request	Request object of the framework
+	# @param response	HTTP_Response named tuple
+	def log_request(self, request, response):
+		print("HTTP/{}.{} {} {} {}".format(
+			request.version.major, request.version.minor,
+			response.code,
+			request.method,
+			request.url))
 	
 	## Request entry point method
 	# @param self		Object pointer
 	# @param request	Request currently being processed
-	# @param rurl		Request url, pre-processed to be relative to the
-	#			presentation root
 	#
 	# This function is the main entry point for any request with its url
 	# being within the presentation root.
-	#
-	# It changes the protocol version to HTTP/1.1, and then calls either
-	# the request handler, or the notfound handler, depending upon whether
-	# a handler and source file could be found
-	#
-	# It requires that the path of the url being processed to be relative
-	# to the document root, and that the source file of the request is
-	# within the presentation root.
-	#
-	# Consider the request http:#define baz.nl/foo/bar.scss, of the 'foo'
-	# presentation. The request should then be preprocessed to
-	# http:#define baz.nl/bar.scss. This is to ensure that this class can be used
-	# either with one presentation, with all the files of the presentation
-	# root mapping to files in the "documen root", or with several
-	# presentation, with each presentation having its own subdirectory.
-	def handle(self, request, rurl):
-	
-		url = urlparse(rurl)
+	def handle(self, request):
 		
-		f = self.figure_handler(request, url)
-		
-		request.protocol_version = 'HTTP/1.1'
-		
-		if f:
-			f(request, url)
-		else:
-			request.notfound()
+		# if the request path is just the slug, without the directory
+		# at the end, redirect it to the directory
+		if request.path == '/' + self.slug:
+			self.log_request(request, 
+				HTTP_Response(
+					code = 304, 
+					headers = {"Location": '/' + self.slug + '/'},
+					body = None
+				)
+			)
+			
+			return web.HTTPFound('/' + self.slug + '/')			
 
+		# generate the path relative to the presentation root, stripping
+		# of the root directory and the slug. If we do them both at the
+		# same time, while we serve the presenation as document root, it
+		# will not strip of the leading slash, which then causes the
+		# server to return 500
+		lpath = request.path.replace('/', '', 1).replace(self.slug + '/', '', 1)
+		r = (self.figure_handler(lpath))(lpath, request)
+		
+		# print out logmessage
+		self.log_request(request, r)
+		
+		return web.Response(
+			status  = r.code,
+			headers = r.headers,
+			text    = r.body,
+		)
+		
+		
 	## Request handler for sending files directly from disk
 	# @param self		Object pointer
-	# @param request	Request currently being considered
-	# @param url		urlparse()-d url object
-	def send_direct(self, request, url):
+	# @param path		Path to the file being requested, relative to
+	#			the presentation root
+	# @param request	Request object. Is not used in this function,
+	#			but is used in utility functions. This parameter
+	#			should not be processed directly in this function
+	#			as to maintain compatability with possibly other
+	#			webservers.
+	# @return		A HTTP_Response named tuple
+	def send_direct(self, path, request):
 		
-		fname = os.path.join(self.path, url.path)
+		fname = os.path.join(self.path, path)
 	
-		if self.client_has_cached(request, fname):
-			return
-			
-		request.end_headers()
+		cached = self.client_has_cached(fname, request)
+	
+		if cached.code == 304:
+			return cached
 		
 		with open(fname, 'r') as f:
-			request.wfile.write(bytes(f.read(), "utf8"))
+			ctnt = f.read()
+		
+		return HTTP_Response(code = 200, headers = cached.headers, body = ctnt)
 
 	## Request handler for sass/scss stylesheets
 	# @copydetails HTTP_Presentation.send_direct
-	def send_sass(self, request, url):
+	def send_sass(self, path, request):
 	
-		fname = os.path.join(self.path, url.path)
+		fname = os.path.join(self.path, path)
 	
-		if self.client_has_cached(request, fname) :
-			return
+		cached = self.client_has_cached(fname, request)
+		if cached.code == 304:
+			return cached
 		
-		request.send_header('Content-type','text/css')
-		request.end_headers()
-		request.wfile.write(bytes(self.compile_sass(fname), "utf8"))
+		ctnt = self.compile_sass(fname)
+		
+		return HTTP_Response(
+			code = 200, 
+			headers = {
+				**cached.headers,
+				'Content-type':'text/css'
+				},
+			body = ctnt
+			)
 	
 	## Request handler for when a resource is not found
 	# @copydetails HTTP_Presentation.send_direct
-	def send_notfound(self, request, url):
-		serve.notfound(request, url)
+	def send_notfound(self, path, request):
+		return HTTP_Response(
+			code = 404, 
+			headers = {},
+			body = "404 Not Found:\n{}".format(path)
+			)
 
 	## Request handler for the html presentation source
 	# @copydetails HTTP_Presentation.send_direct
 	#
 	# This method also check whether or not the source file has changed,
 	# and it reloads it when necessary
-	def send_html(self, request, url):
+	def send_html(self, url, request):
 		
 		fname = os.path.join(self.path, "index.html")
 		
 		if os.path.getmtime(fname) != self.html_mtime:
 			self.reload()
 		
-		if self.client_has_cached(request, fname) :
-			return
-
-		request.send_header('Content-type','text/html')
-		request.end_headers()
-		request.wfile.write(bytes(self.html, "utf8"))
-
-## list of presentation this instance of the program serves
-listof = {}
+		cached = self.client_has_cached(fname, request)
+		if cached.code == 304:
+			return cached
+	
+		return HTTP_Response(
+			code = 200, 
+			headers = {
+				**cached.headers,
+				'Content-type':'text/html'
+				},
+			body = self.html
+			)
 
 ## @}

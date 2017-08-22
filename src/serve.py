@@ -1,8 +1,8 @@
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import sys
 import presentation
 import re
 from urllib.parse import urlparse, urlunparse
+from aiohttp import web
 
 ##
 #  @defgroup serve HTTP server module
@@ -11,112 +11,60 @@ from urllib.parse import urlparse, urlunparse
 #  @{
 #
 
-## Function which strips an arbitrary string of the front of another string
-## currently used to strip of the presentation directory of a path
-def strip_presentation_root(root, path):
-	return re.sub(root, '', path, 1)
+## Wrapper to initialise and start the webapp
+# @param preslist	List of presentations. Only required argument
+# @param address	Address to listen to. Defaults to localhost
+# @param port		Port to listen on. Defaults to 9090
+# @param single		Whether or not to serve a single presentation in the
+#			document root or in it's own directory. Defaults to
+#			False
+# @param verbosity	Verbosity we will use for the output and the
+#			initialisation summary. Defaults to 1
+#			Possible options are:
+#			0: No output besides the webserver's and the request
+#				logs
+#			1: initialisation summary + list of presentations served
+#			2: as with 1, but also with the presentation base url
+#				and path to the source directory
+def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1):
 
-
-## Convert the request url to a url which can be used in the presentation
-## classes
-def convert_path(root, urll):
-	urlll = list(urll)
+	app = web.Application()
 	
-	# the second element corresponds to <url-obj>.path
-	urlll[2] = strip_presentation_root(root, urll.path)
-	return urlunparse(urlll)
+	# if there is only one presentation, serve it from the document root
+	# unless it is specified that we also want single presentations to be
+	# served from their own directory
+	if len(preslist) == 1 and not single:
+		def add(p):
+			app.router.add_route('GET', '/', preslist[0].handle)
+			app.router.add_route('GET', '/{file}', preslist[0].handle)
+			show(p, '/')
+	else:
+		def add(p):
+			app.router.add_route('GET', '/' + p.slug, p.handle)
+			app.router.add_route('GET', '/' + p.slug + '/', p.handle)
+			app.router.add_route('GET', '/' + p.slug + '/{file}', p.handle)
+			show(p, '/' + p.slug + '/')
+
+	if verbosity == 1:
+		def show(p, root):
+			print(" - " + p.title)
+	elif verbosity >= 2:
+		def show(p, root):
+			print(" - {}\t(url: {:<15} source:{})".format(p.title, root, p.path))
+	else:
+		def show(p, root):
+			pass
+
+	# print the initialisation summary line
+	if verbosity > 0:
+		print("serving {} presentation{}:".format(len(preslist), "s" if len(preslist) > 1 else ""))
 	
-
-## Base presentation request handler
-#
-# Class which holds all the function and state shared between the single-, and
-# multiple presentation handlers
-class base_presentation(BaseHTTPRequestHandler):
-	
-	## Send the 404 headers and error message
-	# @param request	Request being processed
-	def notfound(request):
-		request.send_response(404)
-		request.end_headers()
-		request.wfile.write(bytes(
-			"Error 404\n\nresource: \"{}\"\nwas not found on this server"
-				.format(request.path),
-			"utf8")
-		)
-
-## Class which is used when only a single presentation is to be served from
-# the document root directory. Since it is the only one, it does not need
-# a presentation lookup function
-class single_presentation(base_presentation):
-
-	## GET request handler
-	# @param self	Object pointer
-	def do_GET(self):
-		url = convert_path('/', urlparse(self.path))		
-		presentation.listof.handle(self, url)
-
-
-## Class which is used to serve multiple presentations.
-# It builds up a routing table by asking the presentation objects for their
-# slugs, which then get used in the url as the directory
-class multiple_presentations(base_presentation):
-
-	## Redirect user agent to the actual presentation location
-	# @param self		Object pointer
-	# @param location	Presentation slug, without leading/trailing slashed
-	def redirect_to_real(self, location):	
-		self.send_response(301)
-		self.send_header("Location", '/' + location + '/')
-		self.end_headers()
-
-	## GET request handler
-	# @param self	Object pointer
-	#
-	# It parses the request url, and the does a lookup for the presentation
-	# which was requested. It triggers a redirect when the user agent
-	# requested the file instead of the directory for the presentation,
-	# and triggers a 404 when the request does not correspond to any known
-	# presentation
-	def do_GET(self):
-		
-		url = urlparse(self.path)
-		path = re.split('/', url.path)
-		name = path[1]
-		
-		# strip of the presentation path, so the presentation class
-		# can search within that url for its files
-		converted_url = convert_path('/' + name + '/', url)
-		
-		if name:
-			obj = presentation.listof.get(name)
+	# add the presenatations to the app
+	for p in preslist:
+		add(p)
 			
-			# redirect if url is wrong (as in, tried to acces file
-			# instead of directory), but presentation exists
-			if len(path) == 2 and obj:
-				self.redirect_to_real(name)
-			
-			# if the url is correct and the object exists, serve it
-			elif obj:
-				self.slug = name
-				self.obj = obj
-				obj.handle(self, converted_url)
-			
-			# return 404
-			else:
-				self.notfound()
-		else:
-			self.notfound()
-
-## Build a routing table for the webserver from a list of presentation objects
-# @param preslist	List of presentations to be served
-# @return		Lookup table of presentations
-# We ask the presentation for its slug, which we then use for the route
-def build_routing_table(preslist):
-	presdict = {}
-	for i in preslist:
-		presdict[i.slug] = i
 	
-	return presdict
+	web.run_app(app, host=address, port=port)
 
 ## Serve subcommand
 # @param argn	Argument where "Main" stopped parsing
@@ -135,36 +83,34 @@ Usage:
 serve [options] [presentations]
 
 Options:
--p, --port         Port for the webserver to listen to (p<1024 requires root)
--a, --addresses    Addresses to listen to (0.0.0.0 is the whole accessible
-                   internet, 127.0.0.1 is only your own computer)
+-p, --port         Port for the webserver to listen to (9090 is the default)
+-a, --addresses    Addresses to listen to (localhost is the default)
 -s, --single       Serve a single presentation in its own directory, instead
                    of directly in the root directory
 -v, --verbose      Be verbose
+-z, --silent       Be silent
 -h, --help         Show this helptext'''
-	
 	
 	# defaults
 	port = 9090
-	addresses = '127.0.0.1'
-	# Serve a single presentation in its own directory. If set it overrides
-	# the default that a single presentation will be served from the
-	# document root
-	single_presentation_as_directory = False
-	verbose = False
+	address = '127.0.0.1'
+	verbose = 1
+	single = False
 	
 	# continue parsing
 	i = argn+1
 	while i < len(argv):
 		if argv[i] in ("-p", "--port"):
 			port = int(argv[i+1])
-		if argv[i] in ("-a", "--addresses"):
-			addresses = argv[i+1]
-		if argv[i] in ("-s", "--single"):
-			single_presentation_as_directory = True
-		if argv[i] in ("-v", "--verbose"):
-			verbose = True
-		if argv[i] in ("-h", "--help"):
+		elif argv[i] in ("-a", "--addresses"):
+			address = argv[i+1]
+		elif argv[i] in ("-v", "--verbose"):
+			verbose = 2
+		elif argv[i] in ("-z", "--silent"):
+			verbose = 0
+		elif argv[i] in ("-s", "--single"):
+			single = True
+		elif argv[i] in ("-h", "--help"):
 			print(helptext)
 			return
 		else:
@@ -176,50 +122,13 @@ Options:
 
 	number_of_presentations = len(preslist)
 
-	# if we've got more than one presentation, or if we want to serve
-	# one presentation through a subdirectory instead of through the
-	# document root, serve the presentation(s) using a routing table
-	if number_of_presentations > 1 or \
-	  (number_of_presentations == 1 and single_presentation_as_directory):
-		presentation.listof = build_routing_table(preslist)
-		handler = multiple_presentations 
-	
-	# if we've got just one presentation, serve it directly
-	elif number_of_presentations == 1:
-		presentation.listof = preslist[0]
-		handler = single_presentation
-	else:
+
+	if number_of_presentations == 0:
 		print("No presentations specified")
 		return False
-	
-	# status output section
-	print("Serving {} presentation{}, titled:".format(
-		number_of_presentations,
-		"s" if number_of_presentations > 1 else "") # handle plurals
-	)
-	
-	# prepare the lambda functions for verbose output
-	if not verbose:
-		of = lambda obj: "" # nothing gets added to status string
-	else:
-		# if verbose, show the url it is served under and 
-		# the presentation source
-		if handler == single_presentation:
-			of = lambda obj: " (url: {} source: '{}')" \
-					.format('/', obj.path)
-		else:
-			of = lambda obj: " (url: {:<15} source: '{}')"	\
-					.format('/' + obj.slug + '/', obj.path)
-	
-	for i in preslist:
-		print(" - {:<15}{}".format('"' + i.title + '"', of(i)))
-		
-	print("on {}:{}".format(addresses, port))
-	# </> status output section
 
 	try:
-		server = HTTPServer((addresses, port), handler)
-		server.serve_forever()
+		run(preslist, address, port, single, verbose)
 	except KeyboardInterrupt:
 		print("Exiting")
 		sys.exit(0)
