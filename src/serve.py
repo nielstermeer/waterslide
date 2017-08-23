@@ -1,9 +1,11 @@
 import sys
 import os
 import presentation
+import multiplex
 import re
 from urllib.parse import urlparse, urlunparse
 from aiohttp import web
+from passlib import hash
 
 ##
 #  @defgroup serve HTTP server module
@@ -43,6 +45,8 @@ def presentation_need_locals(presses):
 			return True
 	return False
 
+
+
 ## Wrapper to initialise and start the webapp
 # @param preslist	List of presentations. Only required argument
 # @param address	Address to listen to. Defaults to localhost
@@ -58,10 +62,18 @@ def presentation_need_locals(presses):
 #			1: initialisation summary + list of presentations served
 #			2: as with 1, but also with the presentation base url
 #				and path to the source directory
+# @param local_reveal	A path to a local Reveal repository (to add a static
+# 			route to, so we can serve the Reveal resources locally)
+#			or None, when we don't want to add a static route
+# @param mconf		Multiplex configuration
 def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
-	local_reveal=None):
+	local_reveal=None, mconf = None):
 
 	app = web.Application()
+	
+	if mconf:
+		multiplex.start_socket_io(app, mconf)
+		
 	
 	# if there is only one presentation, serve it from the document root
 	# unless it is specified that we also want single presentations to be
@@ -147,6 +159,8 @@ Options:
                         another provider. The availability of the new
                         provider is NOT checked.
 
+--no-cache              Do not send caching headers
+
 -v, --verbose           Be verbose
 -z, --silent            Be silent
 
@@ -168,6 +182,11 @@ Options:
 	# parsing. After parsing, they get checked and loaded into the actual
 	# presentation list
 	maybe_list = []
+	
+	do_multiplex = False
+	mconf_hash = hash.bcrypt
+	
+	do_cache = True
 	
 	# continue parsing
 	i = argn+1
@@ -203,7 +222,13 @@ Options:
 				i+=1	
 		elif argv[i] in ("-n", "--no-local-route"):
 			serve_local = False
-			
+		
+		elif argv[i] in ("-m", "--multiplex"):
+			do_multiplex = True
+		
+		elif argv[i] in ("--no-cache",):
+			do_cache = False
+		
 		elif argv[i] in ("-h", "--help"):
 			print(helptext)
 			return
@@ -220,12 +245,18 @@ Options:
 
 	if ovr_provider:
 		print("Overriding Reveal.js providers with {} version".format(ovr_provider))
+
+
+	# load the settings
+	mconf = multiplex.MConf(htype = mconf_hash, rlen=multiplex.MConf.deflen) if do_multiplex else None
 	
 	# load all the maybe presentations into the preslist, if they exist
 	for presentation_path in maybe_list:
 		obj = presentation.HTTP_Presentation(
 			presentation_path, 
-			ovr_provider = ovr_provider if ovr_provider else None
+			ovr_provider = ovr_provider if ovr_provider else None,
+			mconf = mconf,
+			cache = do_cache,
 			)
 		if obj.isreal:
 			preslist.append(obj)
@@ -243,6 +274,7 @@ Options:
 			print("A presentation has 'local' configured as provider, but 'local' is not available")
 			print("Your experience might be degraded, unless Reveal is served by another webserver under /reveal.js/")
 
+
 	try:	
 		run(	preslist, 
 			address = address,
@@ -252,7 +284,10 @@ Options:
 			
 			# only pass in the path to the local Reveal repository if it has
 			# actually been found, and we are allowed to serve it locally
-			local_reveal = reveal_local if (reveal_local and serve_local) else None)
+			local_reveal = reveal_local if (reveal_local and serve_local) else None,
+			mconf = mconf,
+			)
+			
 	except KeyboardInterrupt:
 		print("Exiting")
 		sys.exit(0)

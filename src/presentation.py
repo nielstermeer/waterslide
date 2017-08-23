@@ -9,6 +9,7 @@ import sass
 import serve
 from collections import namedtuple
 from aiohttp import web
+import multiplex
 
 ##
 #  @defgroup presentation Presentation module
@@ -46,16 +47,24 @@ reveal_plugins = {
 # serves the presentation over html
 class Presentation:
 	
-	## html which is send upon a request
-	html = "" 
+	## The presenation core
+	html_base = ""
 	## Path to the presentation
 	path = None
 	## Whether or not this object should be considered valid
 	isreal = False
 	## Configuration dictionary
 	config = {}
-	##
+	## With which provider to override the configured one
 	ovr_provider = None
+	
+	## Multiplex configuration object if multiplexing, None if not
+	mconf = None
+	## Multiplex configuration which will be send to Reveal
+	mult_conf = {}
+	
+	## Whether or not send caching headers
+	do_cache = True
 	
 	## list of providers
 	providers = {
@@ -74,7 +83,11 @@ class Presentation:
 	# @param ovr_provider	Override the configured provider with this argument.
 	#			If not passed, or None or False, it will use either
 	#			the configured provider or the default
-	def __init__(self, path = './', ovr_provider = None):
+	# @param multiplex	Multiplex configuration (None when not needed,
+	#			an instance of multiplex.MConf)
+	# @param cache		Whether to send caching headers or not
+	def __init__(self, path = './', ovr_provider = None, mconf = None,
+			cache = True):
 	
 		if not os.path.isdir(path):
 			self.isreal = False
@@ -83,9 +96,16 @@ class Presentation:
 		if ovr_provider:
 			self.ovr_provider = ovr_provider
 
-		self.path = os.path.realpath(path)		
+		self.path = os.path.realpath(path)
+		
+		if mconf:
+			self.mconf = mconf
+			self.mult_conf = multiplex.create_multiplex_dict(self.mconf)
+		
+			
 		self.import_presentation()
-		self.isreal = True
+		self.do_cache = cache
+		self.isreal = True		
 	
 	## import the presentation from disk
 	# @param self	Object pointer
@@ -112,10 +132,10 @@ class Presentation:
 					self.ovr_provider or self.config.get('provider') or "cdnjs"
 				)
 				
-				self.html = self.prepare_html(conf_and_html[1])
+				self.html_base = conf_and_html[1]
 			else:
 				self.set_provider(self.ovr_provider or "cdnjs")
-				self.html = self.prepare_html(fctnt)
+				self.html_base = fctnt
 				
 	
 	## Function which figures out the title
@@ -196,18 +216,43 @@ class Presentation:
 			csss + (self.config.get('styles') or []))
 	
 	## Get the Reveal.js initialisation json string
-	# @param self	Object pointer
-	# @return	Reveal.js json initialisation string
-	@property
-	def reveal_init_json(self):
+	# @param self		Object pointer
+	# @param is_master	Whether or not the request currently being
+	#			processed is allowed to be a master
+	# @return		Reveal.js json initialisation string
+	def reveal_init_json(self, is_master = False):
 	
-		init = {**(self.config.get('init') or {}), **{"dependencies":[]}}
+		# figure out which settings and plugin Reveal needs
+		# to do multiplexing
+		if self.mconf and is_master:
+			mult_json = {"multiplex": self.mult_conf}
+			m_plugins = [
+				"{ src: '//cdn.socket.io/socket.io-1.3.5.js', async: true }",
+				"{ src: '{}/plugin/multiplex/master.js', async: true }",
+				"{ src: '{}/plugin/multiplex/client.js', async: true }"
+				]
+		elif self.mconf:
+			mult_json = {"multiplex": {**self.mult_conf, **{'secret': None}}}
+			m_plugins = [
+				"{ src: '//cdn.socket.io/socket.io-1.3.5.js', async: true }",
+				"{ src: '{}/plugin/multiplex/client.js', async: true }"
+				]
+		else:
+			mult_json = {}
+			m_plugins = []
+	
+		init =	{**(self.config.get('init') or {}),
+			 **{"dependencies":[]},
+			 **mult_json,
+			 }
+			 
 		initstr = json.dumps(init, ensure_ascii=False)
 		
-		# get a string containing the plugin objects, separated by commas
-		# add the basepath
-		plugins = ','.join([reveal_plugins.get(k, "").replace('{}',self.basepath) 
-					for k in self.config.get('plugins') or []])
+		# get the full list of plugins, including those needed for multiplexing
+		plugin_list = [reveal_plugins.get(k) for k in self.config.get('plugins')] + m_plugins
+		# add the basepath where necessary, and join them JSON style (with a comma)
+		plugins = ','.join([k.replace('{}',self.basepath) 
+					for k in plugin_list  or []])
 		
 		# brute force the insertion of javascript into the object
 		return initstr.replace('"dependencies": []', "dependencies: [{}]".format(plugins))
@@ -220,7 +265,7 @@ class Presentation:
 	# This function combines all the functions which prepare bits
 	# of the presentation, such as the link generators. It also adds the
 	# the title in the head.
-	def prepare_html(self, base):
+	def get_html(self, is_master = False):
 	
 		return str.join('',
 			(
@@ -230,7 +275,7 @@ class Presentation:
 			self.stylesheet_links,
 			"</head><body>",
 			"<div class=\"reveal\"><div class=\"slides\">",
-			base,
+			self.html_base,
 			"</div></div>",
 			self.link_resources(self.link_javascript, 
 				(self.config.get('scripts') or []) +
@@ -239,7 +284,7 @@ class Presentation:
 				[self.basepath + "/js/reveal.js"]
 				),				
 			"<script>Reveal.initialize({});</script>".format(
-					self.reveal_init_json
+					self.reveal_init_json(is_master)
 				),
 			"</body></html>",
 			)
@@ -294,14 +339,14 @@ class HTTP_Presentation(Presentation):
 		
 		lm = datetime.utcfromtimestamp(os.path.getmtime(filename)).replace(tzinfo=pytz.utc)
 		
-		if request.if_modified_since != None and \
+		if self.do_cache and request.if_modified_since != None and \
 			request.if_modified_since.replace(tzinfo=pytz.utc) < lm.replace(tzinfo=pytz.utc):
 		
 			return HTTP_Response(
 				code = 304, 
 				headers = {
 					"Cache-Control":"must-revalidate"
-					},
+					} if self.do_cache else {},
 				body = ""
 				)
 		else:			
@@ -310,7 +355,7 @@ class HTTP_Presentation(Presentation):
 				headers = {
 					"Cache-Control":"must-revalidate",
 					"Last-Modified": lm.strftime('%a, %d %b %Y %H:%M:%S GMT')
-					},
+					} if self.do_cache else {},
 				body = ""
 				)
 			
@@ -464,7 +509,7 @@ class HTTP_Presentation(Presentation):
 				**cached.headers,
 				'Content-type':'text/html'
 				},
-			body = self.html
+			body = self.get_html(True if request.query.get('master') != None else False)
 			)
 
 ## @}
