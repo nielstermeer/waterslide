@@ -54,26 +54,35 @@ class Presentation:
 	isreal = False
 	## Configuration dictionary
 	config = {}
+	##
+	ovr_provider = None
 	
 	## list of providers
 	providers = {
 	"github": "https://raw.githubusercontent.com/hakimel/reveal.js/master",
-	"cdnjs" : "https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.5.0"
+	"cdnjs" : "https://cdnjs.cloudflare.com/ajax/libs/reveal.js/3.5.0",
+	"local" : "/reveal.js"
 	}
 	
 	## default library provider
 	basepath = providers["cdnjs"]
 	
 	## The class constructor
-	# @param self	The object pointer
-	# @param path	The path to the presentation. Defaults to the current
-	#		Working directory
-	def __init__(self, path = './'):
+	# @param self		The object pointer
+	# @param path		The path to the presentation. Defaults to the current
+	#			Working directory
+	# @param ovr_provider	Override the configured provider with this argument.
+	#			If not passed, or None or False, it will use either
+	#			the configured provider or the default
+	def __init__(self, path = './', ovr_provider = None):
 	
 		if not os.path.isdir(path):
 			self.isreal = False
 			return
-	
+
+		if ovr_provider:
+			self.ovr_provider = ovr_provider
+
 		self.path = os.path.realpath(path)		
 		self.import_presentation()
 		self.isreal = True
@@ -98,9 +107,16 @@ class Presentation:
 		
 			if len(conf_and_html) == 2:
 				self.config = self.parse_configuration(conf_and_html[0])
+
+				self.set_provider(
+					self.ovr_provider or self.config.get('provider') or "cdnjs"
+				)
+				
 				self.html = self.prepare_html(conf_and_html[1])
 			else:
+				self.set_provider(self.ovr_provider or "cdnjs")
 				self.html = self.prepare_html(fctnt)
+				
 	
 	## Function which figures out the title
 	# @param self	Object pointer
@@ -113,6 +129,15 @@ class Presentation:
 		return self.config.get("title") or \
 			 os.path.split(self.path)[-1]
 	
+	def set_provider(self, provider):
+		if provider not in self.providers.keys():
+			print("Library provider not recognised: ", provider)
+			key = "cdnjs" # cdnjs is the default provider			
+		else:
+			key = provider
+		
+		self.basepath = self.providers[key]
+	
 	## Parse the presentation configuration
 	# @param self		Object pointer
 	# @param confstr	String containing the configuration, in YAML
@@ -123,20 +148,7 @@ class Presentation:
 	# defaults to cdnjs
 	def parse_configuration(self, confstr):
 		try:
-			conf = yaml.load(confstr) or {}
-			
-			# cdnjs is the default provider
-			provider = conf.get('provider', 'cdnjs')
-			
-			if provider not in self.providers.keys():
-				print("Library provider not recognised: ", provider)
-				key = "cdnjs"				
-			else:
-				key = provider
-			
-			self.basepath = self.providers[key]
-			
-			return conf
+			return yaml.load(confstr) or {}
 		except yaml.YAMLError as exc:
 			print(exc)
 			return {}

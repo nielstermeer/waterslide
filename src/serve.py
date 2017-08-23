@@ -1,4 +1,5 @@
 import sys
+import os
 import presentation
 import re
 from urllib.parse import urlparse, urlunparse
@@ -9,7 +10,38 @@ from aiohttp import web
 # 
 #  @addtogroup serve
 #  @{
+#		
+
+## Possible locations of a Reveal.js repositories
 #
+# These can be used to point a static route at them, so that resources can be
+# requested from the same host, instead of from the internet, which the
+# other providers do
+hints = (
+	os.path.join(os.path.expanduser("~"), 'reveal.js'),
+	'/usr/local/share/reveal.js'
+)
+
+## Find local Reveal repositories, return the first found or default if none
+# @param paths		Iterable which contains the paths to search
+# @param default	Default value to return if none could be found
+# @return		Path to a Reveal repository, or the default parameter
+#			if none could be found
+def find_local_reveal(paths, default = None):
+	for d in paths:
+		if os.path.exists(os.path.join(d, 'js/reveal.js')):
+			return d
+	return default
+
+## Check if any presentations given have the 'local' provider configured
+# @param presses	Presentations to check
+# @return		True if any of the presentations need have local
+#			configured, False if none
+def presentation_need_locals(presses):
+	for p in presses:
+		if p.basepath == p.providers.get('local'):
+			return True
+	return False
 
 ## Wrapper to initialise and start the webapp
 # @param preslist	List of presentations. Only required argument
@@ -26,13 +58,15 @@ from aiohttp import web
 #			1: initialisation summary + list of presentations served
 #			2: as with 1, but also with the presentation base url
 #				and path to the source directory
-def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1):
+def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
+	local_reveal=None):
 
 	app = web.Application()
 	
 	# if there is only one presentation, serve it from the document root
 	# unless it is specified that we also want single presentations to be
-	# served from their own directory
+	# served from their own directory. Define a function to handle
+	# both cases
 	if len(preslist) == 1 and not single:
 		def add(p):
 			app.router.add_route('GET', '/', preslist[0].handle)
@@ -45,6 +79,8 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1):
 			app.router.add_route('GET', '/' + p.slug + '/{file}', p.handle)
 			show(p, '/' + p.slug + '/')
 
+	# define an output function to show the presentation configuration,
+	# depending on the verbosity level
 	if verbosity == 1:
 		def show(p, root):
 			print(" - " + p.title)
@@ -62,7 +98,10 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1):
 	# add the presenatations to the app
 	for p in preslist:
 		add(p)
-			
+	
+	# add a static route to a Reveal repository, if one is provided
+	if local_reveal:
+		app.router.add_static('/reveal.js/', local_reveal)
 	
 	web.run_app(app, host=address, port=port)
 
@@ -75,60 +114,145 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1):
 # for the subcommand.
 def serve(argn, argv):
 
-	preslist = list()
 	helptext = \
 '''Serve subcommand: Serve a presentation over HTTP
 
 Usage:
 serve [options] [presentations]
 
+Note that when an option conflicts with any option which came previously,
+the last one takes precedence
+
 Options:
--p, --port         Port for the webserver to listen to (9090 is the default)
--a, --addresses    Addresses to listen to (localhost is the default)
--s, --single       Serve a single presentation in its own directory, instead
-                   of directly in the root directory
--v, --verbose      Be verbose
--z, --silent       Be silent
--h, --help         Show this helptext'''
+-p, --port <port>       Port for the webserver to listen to
+                        (port 9090 is the default)
+-a, --addresses <addr>  Addresses to listen to (localhost is the default)
+
+-s, --single            Serve a single presentation in its own directory,
+                        instead of directly in the root directory
+
+-l, --local <path>      Path to a local Reveal repository.
+-L, --find-local        Attempt to find a local Reveal repository from a list
+                        of builtin possible locations.
+-d, --dont-local        Don't search for a local version of Reveal
+                        in /usr/share/reveal.js.
+-n, --no-local-route    Don't add a static route for a local Reveal repository,
+                        even if some presentations require it. 
+                        It also supresses an error message regarding a
+                        possible non-availability of a local Reveal repository.
+                        This might be useful for when the local Provider is
+                        served by another webserver
+
+-o, --override <prov>   Override all configured presentation providers with
+                        another provider. The availability of the new
+                        provider is NOT checked.
+
+-v, --verbose           Be verbose
+-z, --silent            Be silent
+
+-h, --help              Show this helptext'''
 	
 	# defaults
+	preslist = list()
 	port = 9090
 	address = '127.0.0.1'
 	verbose = 1
 	single = False
+	
+	reveal_local = None	# path to local Reveal repository
+	ovr_provider = False	# Override argument
+	dont_attempt_local = False # whether or not to search for a local Reveal repository
+	serve_local = True	# whether or not to serve a local Reveal repository
+	
+	# list wherein all the possible presentations get loaded during argument
+	# parsing. After parsing, they get checked and loaded into the actual
+	# presentation list
+	maybe_list = []
 	
 	# continue parsing
 	i = argn+1
 	while i < len(argv):
 		if argv[i] in ("-p", "--port"):
 			port = int(argv[i+1])
+			i += 1
 		elif argv[i] in ("-a", "--addresses"):
 			address = argv[i+1]
+			i += 1 # skip the next argument
+			
 		elif argv[i] in ("-v", "--verbose"):
 			verbose = 2
 		elif argv[i] in ("-z", "--silent"):
 			verbose = 0
+			
 		elif argv[i] in ("-s", "--single"):
 			single = True
+			
+		elif argv[i] in ("-l", "--local"):
+			reveal_local = find_local_reveal([argv[i+1]], False)
+			i += 1
+		elif argv[i] in ("-L", "--find-local"):
+			reveal_local = find_local_reveal(list(hints), False)
+		elif argv[i] in ("-d", "--dont-local"):
+			dont_attempt_local = True
+			serve_local = False
+		elif argv[i] in ("-o", "--override"):
+			temp = argv[i+1]
+			
+			if temp in presentation.Presentation.providers.keys():
+				ovr_provider = temp
+				i+=1	
+		elif argv[i] in ("-n", "--no-local-route"):
+			serve_local = False
+			
 		elif argv[i] in ("-h", "--help"):
 			print(helptext)
 			return
 		else:
-			obj = presentation.HTTP_Presentation(argv[i])
-			if obj.isreal:
-				preslist.append(obj)
+			maybe_list.append(argv[i])
 			
 		i += 1
+	
+	# if no local Reveal repository has been found, and we haven't been
+	# forbidden to search for it, or serve it locally, attempt a search
+	if not reveal_local and not dont_attempt_local:
+		reveal_local = find_local_reveal(['/usr/bin/share/reveal.js'])
+	
 
-	number_of_presentations = len(preslist)
+	if ovr_provider:
+		print("Overriding Reveal.js providers with {} version".format(ovr_provider))
+	
+	# load all the maybe presentations into the preslist, if they exist
+	for presentation_path in maybe_list:
+		obj = presentation.HTTP_Presentation(
+			presentation_path, 
+			ovr_provider = ovr_provider if ovr_provider else None
+			)
+		if obj.isreal:
+			preslist.append(obj)
 
-
-	if number_of_presentations == 0:
-		print("No presentations specified")
+	# check if there are actually any valid presentations specified, abort if none	
+	if len(preslist) == 0:
+		print("No (valid) presentations specified")
 		return False
+	
+	# only serve local presentations if a presentation actually needs them
+	if presentation_need_locals(preslist):
+		if reveal_local and os.path.exists(os.path.join(reveal_local, 'js/reveal.js')):
+			print("Serving Reveal.js locally from ", reveal_local)
+		elif serve_local:
+			print("A presentation has 'local' configured as provider, but 'local' is not available")
+			print("Your experience might be degraded, unless Reveal is served by another webserver under /reveal.js/")
 
-	try:
-		run(preslist, address, port, single, verbose)
+	try:	
+		run(	preslist, 
+			address = address,
+			port = port,
+			single = single,
+			verbosity = verbose,
+			
+			# only pass in the path to the local Reveal repository if it has
+			# actually been found, and we are allowed to serve it locally
+			local_reveal = reveal_local if (reveal_local and serve_local) else None)
 	except KeyboardInterrupt:
 		print("Exiting")
 		sys.exit(0)
