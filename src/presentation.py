@@ -224,22 +224,22 @@ class Presentation:
 	
 		# figure out which settings and plugin Reveal needs
 		# to do multiplexing
-		if self.mconf and is_master:
+		if self.mconf:
 			mult_json = {"multiplex": self.mult_conf}
 			m_plugins = [
 				"{ src: '//cdn.socket.io/socket.io-1.3.5.js', async: true }",
-				"{ src: '{}/plugin/multiplex/master.js', async: true }",
-				"{ src: '{}/plugin/multiplex/client.js', async: true }"
+				"{ src: '/waterslide/multiplex.js', async: true}"
 				]
-		elif self.mconf:
-			mult_json = {"multiplex": {**self.mult_conf, **{'secret': None}}}
-			m_plugins = [
-				"{ src: '//cdn.socket.io/socket.io-1.3.5.js', async: true }",
-				"{ src: '{}/plugin/multiplex/client.js', async: true }"
-				]
+			
+			# only pass the secret onto the master presentation(s)
+			if not is_master:
+				mult_json['secret'] = None
+			
 		else:
 			mult_json = {}
 			m_plugins = []
+		
+		
 	
 		init =	{**(self.config.get('init') or {}),
 			 **{"dependencies":[]},

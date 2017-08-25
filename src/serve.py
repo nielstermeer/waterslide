@@ -115,6 +115,10 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
 	if local_reveal:
 		app.router.add_static('/reveal.js/', local_reveal)
 	
+	# add a static route to resources waterslide provides (currently only a better version
+	# of the multiplex plugin.
+	app.router.add_static('/waterslide', os.path.join(os.path.split(__file__)[0], 'web-resources'))
+	
 	web.run_app(app, host=address, port=port)
 
 ## Serve subcommand
@@ -158,6 +162,12 @@ Options:
 -o, --override <prov>   Override all configured presentation providers with
                         another provider. The availability of the new
                         provider is NOT checked.
+
+-m, --multiplex         Enable multiplexing of presentations. This enables a
+                        Socket.io server, and adds the configuration to the
+                        presenations. Pass the "master" query in the url to
+                        obtain control of the presenation
+                        (e.g.: localhost/?master)
 
 --no-cache              Do not send caching headers
 
