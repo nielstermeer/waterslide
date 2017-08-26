@@ -2,30 +2,24 @@
 from setuptools import setup, find_packages
 from codecs import open
 from os import path
+import sys
 import subprocess
 import re
-
-def coerce_version():
-	# the version is the output of the git describe command, up to but not including the trailing newline
-	vstr = (subprocess.Popen(["git", "describe", "--first-parent"], stdout=subprocess.PIPE)).communicate()[0].decode("utf8")[:-1]
-	
-	t = re.split('-', vstr)
-	
-	# strip the namespacing 'v' of the front
-	version = t[0][1:]
-	dev_v = '-dev' + t[1] if len(t) == 2 else ''
-	
-	return version + dev_v
+from waterslide import version
 
 with open('README.md', 'r') as f:
 	desc = f.read()
 
-print(find_packages())
+v = version.pep440()
+
+if not v:
+	print("Could not obtain a valid version number")
+	sys.exit(1)
 
 setup(
 	name = 'waterslide',
 	
-	version = coerce_version(),
+	version = v,
 	
 	description = "Plug and Play Reveal.js presenations",
 	
