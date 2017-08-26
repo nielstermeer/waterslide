@@ -1,11 +1,11 @@
 import sys
 import os
-import presentation
-import multiplex
 import re
 from urllib.parse import urlparse, urlunparse
 from aiohttp import web
 from passlib import hash
+
+from waterslide import presentation, multiplex
 
 ##
 #  @defgroup serve HTTP server module
@@ -75,6 +75,10 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
 		multiplex.start_socket_io(app, mconf)
 		
 	
+	dirname = os.path.split(__file__)[0]
+	
+	print(dirname)
+	
 	# if there is only one presentation, serve it from the document root
 	# unless it is specified that we also want single presentations to be
 	# served from their own directory. Define a function to handle
@@ -117,8 +121,9 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
 	
 	# add a static route to resources waterslide provides (currently only a better version
 	# of the multiplex plugin.
-	app.router.add_static('/waterslide', os.path.join(os.path.split(__file__)[0], 'web-resources'))
+	app.router.add_static('/waterslide', os.path.join(dirname, 'web-resources'))
 	
+		
 	web.run_app(app, host=address, port=port)
 
 ## Serve subcommand

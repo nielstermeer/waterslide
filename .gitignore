@@ -9,3 +9,10 @@ latex/
 
 # virtualenv
 env/
+
+# egg stuff
+waterslide.egg-info/
+
+# build stuff
+build/
+dist/
