@@ -498,9 +498,14 @@ class HTTP_Presentation(Presentation):
 		if os.path.getmtime(fname) != self.html_mtime:
 			self.reload()
 		
-		cached = self.client_has_cached(fname, request)
-		if cached.code == 304:
-			return cached
+		# only cache the html when we're not multiplexing
+		if not self.mconf:
+			cached = self.client_has_cached(fname, request)
+			if cached.code == 304:
+				return cached
+	
+		else:
+			cached = HTTP_Response(code = 200, headers = {}, body = "")
 	
 		return HTTP_Response(
 			code = 200, 
