@@ -14,8 +14,8 @@ and you're good to go.
 # How to use: The longer version
 
 ## The presentation itself
-Consider the directory named "example" (see ./examples/example in the project
-root). The presentation itself, along with the configuration is located
+Consider the directory named "example" (see ./example-presenations/example).
+The presentation itself, along with the configuration is located
 in the file index.html, like this:
 
 ~~~~~~
@@ -36,21 +36,5 @@ scripts:
 
 Anything above the string `<!-- EOC -->` (watch the spaces) is considered
 configuration for the presentation, in YAML. Anything below the actual
-reveal.js presentation core.
-
-## Custom stylesheets
-Custom stylesheets are put directly next to index.html in the presentation
-directory. Then they are listed in the "styles" configuration directive in a
-list. The name listed should directly correspond to the name used on disk.
-SCSS stylesheets are fully supported through libsass-python, and are compiled
-on demand, no further action required
-
-## Custom javascript
-Custom javascript files are just as easily used as the stylesheets. List them
-in the "scripts" configuration directive in a list.
-
-## Miscellaneous configuration directive
-- title: Specify the title of the presentation. If not provided, Waterslide
-	will use the name of the directory it is located in.
-- theme: Reveal.js theme Waterslide will link to. If not specified, it defaults
-	to black (soo nice on the eyes:).
+reveal.js presentation core. The configuration parameters are documented
+in 'doc/conf-doc.yaml'
