@@ -179,7 +179,9 @@ Options:
 -v, --verbose           Be verbose
 -z, --silent            Be silent
 
--h, --help              Show this helptext'''
+-h, --help              Show this helptext
+
+--                      No argument processing after this'''
 	
 	# defaults
 	preslist = list()
@@ -247,6 +249,14 @@ Options:
 		elif argv[i] in ("-h", "--help"):
 			print(helptext)
 			return
+		
+		# stop intrepeting arguments
+		elif argv[i] == "--":
+			i+=1
+			while i < len(argv):
+				maybe_list.append(argv[i])
+				i+=1
+		
 		else:
 			maybe_list.append(argv[i])
 			
