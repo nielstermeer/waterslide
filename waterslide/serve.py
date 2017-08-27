@@ -147,7 +147,7 @@ the last one takes precedence
 Options:
 -p, --port <port>       Port for the webserver to listen to
                         (port 9090 is the default)
--a, --addresses <addr>  Addresses to listen to (localhost is the default)
+-a, --addresses <addr>  Addresses to listen to (0.0.0.0 is the default)
 
 -s, --single            Serve a single presentation in its own directory,
                         instead of directly in the root directory
@@ -186,7 +186,10 @@ Options:
 	# defaults
 	preslist = list()
 	port = 9090
-	address = '127.0.0.1'
+	# default to 0.0.0.0 for least astonishment. When you require that the
+	# presentation is only accessible on localhost, you can probably figure
+	# out that you can do that with '-a 127.0.0.1'.
+	address = '0.0.0.0'
 	verbose = 1
 	single = False
 	
