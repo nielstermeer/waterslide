@@ -18,6 +18,10 @@ command, in the format of `<semver>[.dev<distance>]`. The above rules apply
 here too.
 
 # [UNRELEASED]
+
+# [0.1.0] 2017-8-27
+Bumped version number to get in line with semver.
+
 ## Added
 - No caching of the HTML when multiplexing
 - Semi-automatic versioning using git-tag and git-describe
