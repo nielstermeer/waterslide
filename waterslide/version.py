@@ -37,6 +37,7 @@ def human():
 	else:
 		return '-'.join(version)
 
+## Generatie a distribution/release json structure
 def generate_data_file():
 	data = {
 		'version': '-'.join(version),
@@ -83,11 +84,26 @@ def of_commit(commit_ish = "HEAD"):
 	
 	return parse_vstring(vstr)	
 
+## Program version information.
+#
+# Defaults to zeroes, get's updated during module initalisation. It first
+# checks the datafile (which shouldn't exists while developing), and then
+# resorts to asking git for the data.
+version		= vdef('0.0.0', 0, '0')
+## program buildtime.
+#
+# Defaults to 0, but gets updated during module initialisation. It first
+# checks the datafile (which shouldn't exists while developing), and then
+# resorts to asking git for the data.
+buildtime	= 0
+
+# end module documetation here, so we don't include initialisation code
+## @}
+
 # setup data. Doing it this way we can ensure we always have some kind of valid data.
 temp = read_data_file()
 
-version = parse_vstring(temp.get('version')) or of_commit("HEAD") or vdef('0.0.0', 0, '0')
+version = parse_vstring(temp.get('version')) or of_commit("HEAD") or version
 buildtime = temp.get('buildtime') or time.time()
 
 del temp
-## @}
