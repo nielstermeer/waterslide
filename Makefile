@@ -3,7 +3,7 @@ default: wheel
 .PHONY: docs clean
 
 docs: $(wildcard **.py)
-	doxygen Doxyfile; make -C latex
+	( cat Doxyfile ; echo "PROJECT_NUMBER="`./wslide version --release`) | doxygen - && make -C latex
 
 build:
 	python3 setup.py build
