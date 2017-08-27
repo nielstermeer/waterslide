@@ -1,11 +1,31 @@
 #! /usr/bin/python3
 from setuptools import setup, find_packages
+from setuptools.command.build_py import build_py
 from codecs import open
 from os import path
 import sys
+import os
+import json
+import time
 import subprocess
 import re
 from waterslide import version
+
+class dyn_data(build_py):
+	def run(self):
+		# honor the --dry-run flag
+		if not self.dry_run:
+			target_dir = os.path.join(self.build_lib, 'waterslide/resources')
+
+			# mkpath is a distutils helper to create directories
+			self.mkpath(target_dir)
+
+			with open(os.path.join(target_dir, 'data.json'), 'w') as f:
+				f.write(version.generate_data_file())
+
+		# distutils uses old-style classes, so no super()
+		build_py.run(self)
+
 
 with open('README.md', 'r') as f:
 	desc = f.read()
@@ -17,6 +37,8 @@ if not v:
 	sys.exit(1)
 
 setup(
+	cmdclass={'build_py': dyn_data},
+	
 	name = 'waterslide',
 	
 	version = v,
