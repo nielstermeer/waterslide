@@ -77,8 +77,6 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
 	
 	dirname = os.path.split(__file__)[0]
 	
-	print(dirname)
-	
 	# if there is only one presentation, serve it from the document root
 	# unless it is specified that we also want single presentations to be
 	# served from their own directory. Define a function to handle
