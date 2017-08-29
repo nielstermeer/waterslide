@@ -204,7 +204,8 @@ Options:
 	do_multiplex = False
 	mconf_hash = hash.bcrypt
 	
-	do_cache = True
+	# presenatation configuration object
+	pconf = presentation.PConf()
 	
 	# continue parsing
 	i = argn+1
@@ -236,7 +237,7 @@ Options:
 			temp = argv[i+1]
 			
 			if temp in presentation.Presentation.providers.keys():
-				ovr_provider = temp
+				pconf.provider = temp
 				i+=1	
 		elif argv[i] in ("-n", "--no-local-route"):
 			serve_local = False
@@ -245,7 +246,7 @@ Options:
 			do_multiplex = True
 		
 		elif argv[i] in ("--no-cache",):
-			do_cache = False
+			pconf.cache = False
 		
 		elif argv[i] in ("-h", "--help"):
 			print(helptext)
@@ -276,12 +277,12 @@ Options:
 	# load the settings
 	mconf = multiplex.MConf(htype = mconf_hash, rlen=multiplex.MConf.deflen) if do_multiplex else None
 
+	pconf.mconf = mconf
+
 	preslist = presentation.loadl(
 			maybe_list,
-			ptype = presentation.HTTP_Presentation,
-			ovr_provider = ovr_provider if ovr_provider else None,
-			mconf = mconf,
-			cache = do_cache,
+			pconf,
+			assoc = None,
 			)
 			
 

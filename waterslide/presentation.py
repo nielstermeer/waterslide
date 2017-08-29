@@ -37,6 +37,18 @@ reveal_plugins = {
 	'print-pdf': '{ "src": "{}/plugin/print-pdf/print-pdf.js"}'
 }
 
+class PConf:
+	
+	def __init__(self,
+		provider = None,
+		mconf = None,
+		cache = True,
+	):
+		self.provider = provider
+		self.mconf = mconf
+		self.cache = cache
+		
+
 ## Main presentation class
 # this class is where the rest of the program is build around. It represents
 # the presentation which is stored on disk, while also performing operations
@@ -51,18 +63,14 @@ class Presentation:
 	path = None
 	## Whether or not this object should be considered valid
 	isreal = False
-	## Configuration dictionary
-	config = {}
-	## With which provider to override the configured one
-	ovr_provider = None
 	
-	## Multiplex configuration object if multiplexing, None if not
-	mconf = None
+	## Presentation configuration dictionary
+	config = {}
+	## Configuration object
+	conf = None
+	
 	## Multiplex configuration which will be send to Reveal
 	mult_conf = {}
-	
-	## Whether or not send caching headers
-	do_cache = True
 	
 	## list of providers
 	providers = {
@@ -71,8 +79,7 @@ class Presentation:
 	"local" : "/reveal.js"
 	}
 	
-	## default library provider
-	basepath = providers["cdnjs"]
+	provider = 'cdnjs'
 	
 	## The class constructor
 	# @param self		The object pointer
@@ -84,26 +91,26 @@ class Presentation:
 	# @param multiplex	Multiplex configuration (None when not needed,
 	#			an instance of multiplex.MConf)
 	# @param cache		Whether to send caching headers or not
-	def __init__(self, path = './', ovr_provider = None, mconf = None,
-			cache = True):
-	
-		if not os.path.isdir(path):
+	def __init__(self, path = './', conf = None):
+		
+		self.conf = conf
+		
+		if not conf or not os.path.isdir(path):
 			self.isreal = False
 			return
 
-		if ovr_provider:
-			self.ovr_provider = ovr_provider
-
 		self.path = os.path.realpath(path)
 		
-		if mconf:
-			self.mconf = mconf
-			self.mult_conf = multiplex.create_multiplex_dict(self.mconf)
+		if self.conf.mconf:
+			self.mult_conf = multiplex.create_multiplex_dict(self.conf.mconf)
 		
 			
 		self.import_presentation()
-		self.do_cache = cache
 		self.isreal = True		
+	
+	@property
+	def basepath(self):
+		return self.providers.get(self.provider) or self.providers['cdnjs']
 	
 	## import the presentation from disk
 	# @param self	Object pointer
@@ -126,13 +133,10 @@ class Presentation:
 			if len(conf_and_html) == 2:
 				self.config = self.parse_configuration(conf_and_html[0])
 
-				self.set_provider(
-					self.ovr_provider or self.config.get('provider') or "cdnjs"
-				)
-				
+				self.provider = self.conf.provider or self.config.get('provider') or "cdnjs"
 				self.html_base = conf_and_html[1]
 			else:
-				self.set_provider(self.ovr_provider or "cdnjs")
+				self.provider = self.conf.provider or "cdnjs"
 				self.html_base = fctnt
 				
 	
@@ -146,15 +150,6 @@ class Presentation:
 	def title(self):
 		return self.config.get("title") or \
 			 os.path.split(self.path)[-1]
-	
-	def set_provider(self, provider):
-		if provider not in self.providers.keys():
-			print("Library provider not recognised: ", provider)
-			key = "cdnjs" # cdnjs is the default provider			
-		else:
-			key = provider
-		
-		self.basepath = self.providers[key]
 	
 	## Parse the presentation configuration
 	# @param self		Object pointer
@@ -222,7 +217,7 @@ class Presentation:
 	
 		# figure out which settings and plugin Reveal needs
 		# to do multiplexing
-		if self.mconf:
+		if self.conf.mconf:
 			mult_json = {"multiplex": self.mult_conf}
 			m_plugins = [
 				"{ src: '//cdn.socket.io/socket.io-1.3.5.js', async: true }",
@@ -337,14 +332,14 @@ class HTTP_Presentation(Presentation):
 		
 		lm = datetime.utcfromtimestamp(os.path.getmtime(filename)).replace(tzinfo=pytz.utc)
 		
-		if self.do_cache and request.if_modified_since != None and \
+		if self.conf.cache and request.if_modified_since != None and \
 			request.if_modified_since.replace(tzinfo=pytz.utc) < lm.replace(tzinfo=pytz.utc):
 		
 			return HTTP_Response(
 				code = 304, 
 				headers = {
 					"Cache-Control":"must-revalidate"
-					} if self.do_cache else {},
+					} if self.conf.cache else {},
 				body = ""
 				)
 		else:			
@@ -353,7 +348,7 @@ class HTTP_Presentation(Presentation):
 				headers = {
 					"Cache-Control":"must-revalidate",
 					"Last-Modified": lm.strftime('%a, %d %b %Y %H:%M:%S GMT')
-					} if self.do_cache else {},
+					} if self.conf.cache else {},
 				body = ""
 				)
 			
@@ -485,7 +480,7 @@ class HTTP_Presentation(Presentation):
 			self.reload()
 		
 		# only cache the html when we're not multiplexing
-		if not self.mconf:
+		if not self.conf.mconf:
 			cached = self.client_has_cached(fname, request)
 			if cached.code == 304:
 				return cached
@@ -511,7 +506,7 @@ class HTTP_Presentation(Presentation):
 # @param cache		Whether to cache or not
 # @param assoc		To associate the object with something, and if so, what (currently recognised
 # 			are "slug" and "title"
-def loadl(l, ptype = HTTP_Presentation, ovr_provider = None, mconf = None, cache = True, assoc = None):
+def loadl(l, conf, ptype = HTTP_Presentation, assoc = None):
 	if assoc == None:
 		preslist = []
 	else:
@@ -519,10 +514,8 @@ def loadl(l, ptype = HTTP_Presentation, ovr_provider = None, mconf = None, cache
 	
 	for presentation_path in l:
 		obj = ptype(
-			presentation_path, 
-			ovr_provider = ovr_provider,
-			mconf = mconf,
-			cache = cache,
+			presentation_path,
+			conf
 			)
 		if obj.isreal:
 			if assoc == "slug":
