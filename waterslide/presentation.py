@@ -243,7 +243,7 @@ class Presentation:
 		initstr = json.dumps(init, ensure_ascii=False)
 		
 		# get the full list of plugins, including those needed for multiplexing
-		plugin_list = [reveal_plugins.get(k) for k in self.config.get('plugins')] + m_plugins
+		plugin_list = [reveal_plugins.get(k) for k in (self.config.get('plugins') or [])] + m_plugins
 		# add the basepath where necessary, and join them JSON style (with a comma)
 		plugins = ','.join([k.replace('{}',self.basepath) 
 					for k in plugin_list  or []])
@@ -273,8 +273,8 @@ class Presentation:
 			"</div></div>",
 			self.link_resources(self.link_javascript, 
 				(self.config.get('scripts') or []) +
-				# only add head.js if we actually have plugins
-				([self.basepath + "/lib/js/head.min.js"] if (self.config.get('plugins')) else []) +
+				# only add head.js if we actually have plugins, or when we're multiplexing
+				([self.basepath + "/lib/js/head.min.js"] if (self.config.get('plugins') or self.conf.mconf) else []) +
 				[self.basepath + "/js/reveal.js"]
 				),				
 			"<script>Reveal.initialize({});</script>".format(
@@ -350,7 +350,7 @@ class HTTP_Presentation(Presentation):
 		
 		lm = datetime.utcfromtimestamp(os.path.getmtime(filename)).replace(tzinfo=pytz.utc)
 		
-		if self.conf.cache and imsp < lm:
+		if self.conf.cache and imsp == lm:
 		
 			return HTTP_Response(
 				code = 304, 
