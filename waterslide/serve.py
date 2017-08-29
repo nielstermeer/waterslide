@@ -45,7 +45,9 @@ def presentation_need_locals(presses):
 			return True
 	return False
 
-
+# redirect all requests to their specific presentations when we've got a malformed url
+def redirect(request):
+	return web.HTTPFound('/' + request.match_info['pres'] + '/?' + request.query_string)
 
 ## Wrapper to initialise and start the webapp
 # @param preslist	List of presentations. Only required argument
@@ -83,14 +85,13 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
 	# both cases
 	if len(preslist) == 1 and not single:
 		def add(p):
-			app.router.add_route('GET', '/', preslist[0].handle)
-			app.router.add_route('GET', '/{file}', preslist[0].handle)
+			app.router.add_route('GET', '/{tail:.*}', preslist[0].handle)
 			show(p, '/')
 	else:
+		# add the redirect route
+		app.router.add_route('GET', '/{pres}', redirect)
 		def add(p):
-			app.router.add_route('GET', '/' + p.slug, p.handle)
-			app.router.add_route('GET', '/' + p.slug + '/', p.handle)
-			app.router.add_route('GET', '/' + p.slug + '/{file}', p.handle)
+			app.router.add_route('GET', '/' + p.slug + '/{tail:.*}', p.handle)
 			show(p, '/' + p.slug + '/')
 
 	# define an output function to show the presentation configuration,

@@ -400,19 +400,6 @@ class HTTP_Presentation(Presentation):
 	# This function is the main entry point for any request with its url
 	# being within the presentation root.
 	def handle(self, request):
-		
-		# if the request path is just the slug, without the directory
-		# at the end, redirect it to the directory
-		if request.path == '/' + self.slug:
-			self.log_request(request, 
-				HTTP_Response(
-					code = 304, 
-					headers = {"Location": '/' + self.slug + '/'},
-					body = None
-				)
-			)
-			
-			return web.HTTPFound('/' + self.slug + '/')			
 
 		# generate the path relative to the presentation root, stripping
 		# of the root directory and the slug. If we do them both at the
