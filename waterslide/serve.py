@@ -183,7 +183,6 @@ Options:
 --                      No argument processing after this'''
 	
 	# defaults
-	preslist = list()
 	port = 9090
 	# default to 0.0.0.0 for least astonishment. When you require that the
 	# presentation is only accessible on localhost, you can probably figure
@@ -276,17 +275,15 @@ Options:
 
 	# load the settings
 	mconf = multiplex.MConf(htype = mconf_hash, rlen=multiplex.MConf.deflen) if do_multiplex else None
-	
-	# load all the maybe presentations into the preslist, if they exist
-	for presentation_path in maybe_list:
-		obj = presentation.HTTP_Presentation(
-			presentation_path, 
+
+	preslist = presentation.loadl(
+			maybe_list,
+			ptype = presentation.HTTP_Presentation,
 			ovr_provider = ovr_provider if ovr_provider else None,
 			mconf = mconf,
 			cache = do_cache,
 			)
-		if obj.isreal:
-			preslist.append(obj)
+			
 
 	# check if there are actually any valid presentations specified, abort if none	
 	if len(preslist) == 0:

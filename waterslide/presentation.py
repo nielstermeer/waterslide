@@ -37,7 +37,6 @@ reveal_plugins = {
 	'print-pdf': '{ "src": "{}/plugin/print-pdf/print-pdf.js"}'
 }
 
-
 ## Main presentation class
 # this class is where the rest of the program is build around. It represents
 # the presentation which is stored on disk, while also performing operations
@@ -502,5 +501,37 @@ class HTTP_Presentation(Presentation):
 				},
 			body = self.get_html(True if request.query.get('master') != None else False)
 			)
+
+## load a list of paths which might be presentations into a dictionary or list, depending on the assoc arg
+#
+# @param l		List to be checked and loaded
+# @param ptype		Presentation type to initialise
+# @param ovr_provider	ovr_provider
+# @param mconf		Multiplexing configuration
+# @param cache		Whether to cache or not
+# @param assoc		To associate the object with something, and if so, what (currently recognised
+# 			are "slug" and "title"
+def loadl(l, ptype = HTTP_Presentation, ovr_provider = None, mconf = None, cache = True, assoc = None):
+	if assoc == None:
+		preslist = []
+	else:
+		preslist = {}
+	
+	for presentation_path in l:
+		obj = ptype(
+			presentation_path, 
+			ovr_provider = ovr_provider,
+			mconf = mconf,
+			cache = cache,
+			)
+		if obj.isreal:
+			if assoc == "slug":
+				preslist[obj.assoc] = obj
+			elif assoc == "title":
+				preslist[obj.title] = obj
+			else:
+				preslist.append(obj)
+	
+	return preslist
 
 ## @}
