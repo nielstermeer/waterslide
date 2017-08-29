@@ -557,10 +557,8 @@ class aiohttp_presentation_middleware(HTTP_Presentation):
 ## load a list of paths which might be presentations into a dictionary or list, depending on the assoc arg
 #
 # @param l		List to be checked and loaded
+# @param conf		Presentation configuration
 # @param ptype		Presentation type to initialise
-# @param ovr_provider	ovr_provider
-# @param mconf		Multiplexing configuration
-# @param cache		Whether to cache or not
 # @param assoc		To associate the object with something, and if so, what (currently recognised
 # 			are "slug" and "title"
 def loadl(l, conf, ptype = HTTP_Presentation, assoc = None):
