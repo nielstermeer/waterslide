@@ -282,6 +282,7 @@ Options:
 	preslist = presentation.loadl(
 			maybe_list,
 			pconf,
+			ptype = presentation.aiohttp_presentation_middleware,
 			assoc = None,
 			)
 			

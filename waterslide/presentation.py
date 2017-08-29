@@ -9,6 +9,7 @@ import sass
 from collections import namedtuple
 from aiohttp import web
 from waterslide import serve, multiplex
+from email import utils
 
 ##
 #  @defgroup presentation Presentation module
@@ -304,6 +305,13 @@ HTTP_Response	= namedtuple('HTTP_Response',	('code', 'headers', 'body'))
 # to cache the resources by sending the appropriate cache control headers (DAMN
 # you, Firefox). It also reloads the presentation back into memory after the
 # source file has changed.
+#
+# To keep it as framework agnostic as possible, the common_handler() method
+# uses HTTP_Request named tuples. Also, the urls passed to it should be rewritten
+# to be relative to the presentation's directory
+#
+# consider /foo/bar.js within the foo presentation. The url which is then
+# passed to the foo object should be 'bar.js'.
 class HTTP_Presentation(Presentation):
 
 	## Last measured modification time of the source html file
@@ -321,7 +329,7 @@ class HTTP_Presentation(Presentation):
 	def reload(self):
 		print("Change detected")
 		self.import_presentation()
-	
+
 	## Check whether the client has the resource cached, and send the appropriate headers
 	# @param self		Object pointer
 	# @param request	The request currently being processed
@@ -329,11 +337,20 @@ class HTTP_Presentation(Presentation):
 	# @return		Boolean if the the client has the resource cached,
 	#			so that the calling function knows what to do further
 	def client_has_cached(self, filename, request):
+	
+		# decode the last modified header here instead of relying on
+		# a specific implementation which decodes it for us
+		imsp = datetime(
+			*utils.parsedate(
+				request.headers.get(	'if-modified-since',
+							'Thu, 1 Jan 1970 00:00:00 GMT'
+						)
+					)[:6]
+			).replace(tzinfo=pytz.utc)
 		
 		lm = datetime.utcfromtimestamp(os.path.getmtime(filename)).replace(tzinfo=pytz.utc)
 		
-		if self.conf.cache and request.if_modified_since != None and \
-			request.if_modified_since.replace(tzinfo=pytz.utc) < lm.replace(tzinfo=pytz.utc):
+		if self.conf.cache and imsp < lm:
 		
 			return HTTP_Response(
 				code = 304, 
@@ -381,37 +398,40 @@ class HTTP_Presentation(Presentation):
 	# @param request	Request object of the framework
 	# @param response	HTTP_Response named tuple
 	def log_request(self, request, response):
+	
+		# build a query string from a dictionary
+		def build_query_string(d):
+			return '?' + '&'.join([qstr(e, d[e]) for e in d.keys()]) if len(d) else ''
+		
+		# build a query substring correctly
+		def qstr(a, b):
+			return '{}={}'.format(a,b) if b else a
+	
 		print("HTTP/{}.{} {} {} {}".format(
 			request.version.major, request.version.minor,
 			response.code,
 			request.method,
-			request.url))
+			'{}//{}/{}{}'.format(*request.url[:3], build_query_string(request.url.query))
+			)
+		)
 	
 	## Request entry point method
 	# @param self		Object pointer
-	# @param request	Request currently being processed
+	# @param request	Request currently being processed (HTTP_Request tuple)
 	#
 	# This function is the main entry point for any request with its url
-	# being within the presentation root.
-	def handle(self, request):
-
-		# generate the path relative to the presentation root, stripping
-		# of the root directory and the slug. If we do them both at the
-		# same time, while we serve the presenation as document root, it
-		# will not strip of the leading slash, which then causes the
-		# server to return 500
-		lpath = request.path.replace('/', '', 1).replace(self.slug + '/', '', 1)
-		r = (self.figure_handler(lpath))(lpath, request)
+	# being within the presentation root. The path must be normalised to
+	# be relative to the presentation root. It accepts only HTTP_Request
+	# tuples as its request type, so we can keep this class as framework
+	# agnostic as possible.
+	def handle_common(self, request):
+	
+		response = (self.figure_handler(request.url.path))(request.url.path, request)
 		
 		# print out logmessage
-		self.log_request(request, r)
+		self.log_request(request, response)
 		
-		return web.Response(
-			status  = r.code,
-			headers = r.headers,
-			text    = r.body,
-		)
-		
+		return response
 		
 	## Request handler for sending files directly from disk
 	# @param self		Object pointer
@@ -494,8 +514,45 @@ class HTTP_Presentation(Presentation):
 				**cached.headers,
 				'Content-type':'text/html'
 				},
-			body = self.get_html(True if request.query.get('master') != None else False)
+			body = self.get_html(True if request.url.query.get('master') != None else False)
 			)
+
+HTTP_URL	= namedtuple('HTTP_URL',	('scheme', 'host', 'path', 'query'))
+HTTP_Request	= namedtuple('HTTP_Request', 	('version', 'method', 'headers', 'url','body', 'parent_object'))
+
+## Class to act as a middleware to convert back and forth between aiohttp's
+#  representation of a request and a response to the one used by the
+#  parent class (HTTP_Presentation)
+class aiohttp_presentation_middleware(HTTP_Presentation):
+
+	def handle(self, request):
+		
+		# convert the aiohttp request object to a HTTP_Request tuple
+		# so that it can be processed by the HTTP_Presentation class
+		r = HTTP_Request(
+			version = request.version,
+			method = request.method,
+			headers = request.headers,
+			url = HTTP_URL(
+				scheme	= request.scheme,
+				host	= request.host,
+				# url relative to the presentation directory
+				path	= request.match_info['tail'],
+				query	= request.query,
+			),
+			body = request.read(),
+			parent_object = request
+		)
+		
+		R = self.handle_common(r)
+		
+		return web.Response(
+			status  = R.code,
+			headers = R.headers,
+			text    = R.body,
+		)
+		
+		
 
 ## load a list of paths which might be presentations into a dictionary or list, depending on the assoc arg
 #
