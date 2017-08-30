@@ -452,7 +452,7 @@ class HTTP_Presentation(Presentation):
 		if cached.code == 304:
 			return cached
 		
-		with open(fname, 'r') as f:
+		with open(fname, 'rb') as f:
 			ctnt = f.read()
 		
 		return HTTP_Response(code = 200, headers = cached.headers, body = ctnt)
@@ -549,7 +549,7 @@ class aiohttp_presentation_middleware(HTTP_Presentation):
 		return web.Response(
 			status  = R.code,
 			headers = R.headers,
-			text    = R.body,
+			body    = R.body,
 		)
 		
 		
