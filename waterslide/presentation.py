@@ -44,10 +44,12 @@ class PConf:
 		provider = None,
 		mconf = None,
 		cache = True,
+		static = True,
 	):
 		self.provider = provider
 		self.mconf = mconf
 		self.cache = cache
+		self.static = static
 		
 
 ## Main presentation class
@@ -445,6 +447,13 @@ class HTTP_Presentation(Presentation):
 	#			webservers.
 	# @return		A HTTP_Response named tuple
 	def send_direct(self, path, request):
+		
+		if self.conf.static == False:
+			return HTTP_Response(
+				code = 403,
+				headers = {},
+				body = 'WaterSlide static routes have been disabled'
+				)
 		
 		fname = os.path.join(self.path, path)
 	

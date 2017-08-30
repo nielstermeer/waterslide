@@ -62,6 +62,51 @@ git checkout `waterslide version --release`# checkout base release"""
 		print("waterslide v{} ({})".format(version.human(), tf))
 		print("Copyright (C) Niels ter Meer")
 
+
+## show configuration related data
+# @copydetails no_func
+def conf(argn, argv):
+
+	helptext = \
+'''Configuration information dump subcommand
+
+sources:
+wwwdata-path       Get the path to the web related data. Can be used to
+                   configure a webserver
+                   Options:
+                   --nginx   Get an NginX configuration block which
+                             will serve the web data
+                   <none>    Just serve the data
+
+data-path         Get the path to the program's internal data. Currently only
+                  contains the versioning information file
+'''
+
+	arg = argv[argn+1]
+	args = argv[argn+2:]
+
+	if arg == "wwwdata-path":
+		
+		path = os.path.join(os.path.split(__file__)[0], 'web-resources')
+		
+		if "--nginx" in args:
+			print("\n".join([
+				"location /waterslide {",
+				"\troot {};".format(path),
+				"\ttry_files $uri =404;",
+				"}"
+				])
+			)
+		else:
+			print(path)
+		
+	elif arg == "data-path":
+		path = print(os.path.join(os.path.split(__file__)[0], 'resources'))
+
+	else:
+		print("No configuration data recognised")
+
+
 # stop the main module here, as to not include the variables used within the
 # "main" function below here
 ## @}
@@ -79,6 +124,7 @@ Main options:
 
 Subcommands:
 serve              Serve (a) presentation(s) over http
+conf               Show configuration related data, paths and such
 version            see --version'''
 
 	# commandline defaults
@@ -95,6 +141,9 @@ version            see --version'''
 			sys.exit(0)
 		elif sys.argv[i] == "serve":
 			subcmd = serve.serve
+			break
+		elif sys.argv[i] == "conf":
+			subcmd = conf
 			break
 	
 		i += 1

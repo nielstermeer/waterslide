@@ -49,6 +49,10 @@ def presentation_need_locals(presses):
 def redirect(request):
 	return web.HTTPFound('/' + request.match_info['pres'] + '/?' + request.query_string)
 
+# redirect all requests to their specific presentations when we've got a malformed url
+def forbidden(msg = '403: Forbidden'):
+	return web.Response(status  = 403, body = msg)
+
 ## Wrapper to initialise and start the webapp
 # @param preslist	List of presentations. Only required argument
 # @param address	Address to listen to. Defaults to localhost
@@ -69,7 +73,7 @@ def redirect(request):
 #			or None, when we don't want to add a static route
 # @param mconf		Multiplex configuration
 def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
-	local_reveal=None, mconf = None):
+	local_reveal=None, mconf = None, pconf = None):
 
 	app = web.Application()
 	
@@ -114,14 +118,26 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
 	for p in preslist:
 		add(p)
 	
-	# add a static route to a Reveal repository, if one is provided
-	if local_reveal:
-		app.router.add_static('/reveal.js/', local_reveal)
+	# check if static routing is enabled
+	if pconf.static == True:
+		# add a static route to resources waterslide provides
+		# (currently only a better version of the multiplex plugin).
+		app.router.add_static('/waterslide', os.path.join(dirname, 'web-resources'))
+		
+		# add a static route to a Reveal repository, if one is provided
+		if local_reveal:
+			app.router.add_static('/reveal.js/', local_reveal)
 	
-	# add a static route to resources waterslide provides (currently only a better version
-	# of the multiplex plugin.
-	app.router.add_static('/waterslide', os.path.join(dirname, 'web-resources'))
-	
+	# if the static routes have been disabled, add a diagnostic 403
+	else:
+		print("static is disabled")
+		def no_static(request):
+			return forbidden('WaterSlide static routes have been disabled')
+		
+		app.router.add_route('GET', '/reveal.js/{tail:.*}', no_static)
+		app.router.add_route('GET', '/waterslide/{tail:.*}', no_static)
+		
+		
 		
 	web.run_app(app, host=address, port=port)
 
@@ -174,6 +190,9 @@ Options:
                         (e.g.: localhost/?master)
 
 --no-cache              Do not send caching headers
+
+--disable-static        Disable static file routes, for when another webserver
+                        is handling them for us
 
 -v, --verbose           Be verbose
 -z, --silent            Be silent
@@ -248,6 +267,9 @@ Options:
 		elif argv[i] in ("--no-cache",):
 			pconf.cache = False
 		
+		elif argv[i] in ("--disable-static",):
+			pconf.static = False
+		
 		elif argv[i] in ("-h", "--help"):
 			print(helptext)
 			return
@@ -312,6 +334,7 @@ Options:
 			# actually been found, and we are allowed to serve it locally
 			local_reveal = reveal_local if (reveal_local and serve_local) else None,
 			mconf = mconf,
+			pconf = pconf,
 			)
 			
 	except KeyboardInterrupt:
