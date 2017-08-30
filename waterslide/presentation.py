@@ -348,7 +348,8 @@ class HTTP_Presentation(Presentation):
 					)[:6]
 			).replace(tzinfo=pytz.utc)
 		
-		lm = datetime.utcfromtimestamp(os.path.getmtime(filename)).replace(tzinfo=pytz.utc)
+		# strip of the microseconds, so we can compare the objects without having to round.
+		lm = datetime.utcfromtimestamp(os.path.getmtime(filename)).replace(tzinfo=pytz.utc, microsecond = 0)
 		
 		if self.conf.cache and imsp == lm:
 		
@@ -504,7 +505,6 @@ class HTTP_Presentation(Presentation):
 			cached = self.client_has_cached(fname, request)
 			if cached.code == 304:
 				return cached
-	
 		else:
 			cached = HTTP_Response(code = 200, headers = {}, body = "")
 	
