@@ -12,17 +12,7 @@ from waterslide import presentation, multiplex
 # 
 #  @addtogroup serve
 #  @{
-#		
-
-## Possible locations of a Reveal.js repositories
 #
-# These can be used to point a static route at them, so that resources can be
-# requested from the same host, instead of from the internet, which the
-# other providers do
-hints = (
-	os.path.join(os.path.expanduser("~"), 'reveal.js'),
-	'/usr/local/share/reveal.js'
-)
 
 ## Find local Reveal repositories, return the first found or default if none
 # @param paths		Iterable which contains the paths to search
@@ -45,21 +35,35 @@ def presentation_need_locals(presses):
 			return True
 	return False
 
-# redirect all requests to their specific presentations when we've got a malformed url
+## redirect all requests to their specific presentations when we've got a malformed url
+# @param request	Request object (currently for an aiohttp server)
+# @return		Redirect response.
 def redirect(request):
 	return web.HTTPFound('/' + request.match_info['pres'] + '/?' + request.query_string)
 
-# redirect all requests to their specific presentations when we've got a malformed url
+## Function to send a 403 forbidden status
+# @param msg	message to be send
+# @return	Redirect response for an aiohttp webserver
 def forbidden(msg = '403: Forbidden'):
 	return web.Response(status  = 403, body = msg)
 
+## Serve configuration object
+class SConf():
+	
+	def __init__(
+		self,
+		address	= '127.0.0.1',
+		port	= 9090,
+		single	= False,
+		local_reveal = None,
+	):
+		self.address	= address
+		self.port	= port
+		self.single	= single
+		self.local_reveal = local_reveal
+
 ## Wrapper to initialise and start the webapp
-# @param preslist	List of presentations. Only required argument
-# @param address	Address to listen to. Defaults to localhost
-# @param port		Port to listen on. Defaults to 9090
-# @param single		Whether or not to serve a single presentation in the
-#			document root or in it's own directory. Defaults to
-#			False
+# @param preslist	List of presentations. Required
 # @param verbosity	Verbosity we will use for the output and the
 #			initialisation summary. Defaults to 1
 #			Possible options are:
@@ -68,12 +72,15 @@ def forbidden(msg = '403: Forbidden'):
 #			1: initialisation summary + list of presentations served
 #			2: as with 1, but also with the presentation base url
 #				and path to the source directory
-# @param local_reveal	A path to a local Reveal repository (to add a static
-# 			route to, so we can serve the Reveal resources locally)
-#			or None, when we don't want to add a static route
-# @param mconf		Multiplex configuration
-def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
-	local_reveal=None, mconf = None, pconf = None):
+#
+# @param sconf		Server configuration object. Required
+# @param mconf		Multiplex configuration object
+# @param pconf		Presentation configuration object
+def run(preslist, verbosity=1, sconf = None, mconf = None, pconf = None):
+
+	if not sconf:
+		print("No server configuration provided")
+		return False
 
 	app = web.Application()
 	
@@ -87,7 +94,7 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
 	# unless it is specified that we also want single presentations to be
 	# served from their own directory. Define a function to handle
 	# both cases
-	if len(preslist) == 1 and not single:
+	if len(preslist) == 1 and not sconf.single:
 		def add(p):
 			app.router.add_route('GET', '/{tail:.*}', preslist[0].handle)
 			show(p, '/')
@@ -125,8 +132,8 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
 		app.router.add_static('/waterslide', os.path.join(dirname, 'web-resources'))
 		
 		# add a static route to a Reveal repository, if one is provided
-		if local_reveal:
-			app.router.add_static('/reveal.js/', local_reveal)
+		if sconf.local_reveal:
+			app.router.add_static('/reveal.js/', sconf.local_reveal)
 	
 	# if the static routes have been disabled, add a diagnostic 403
 	else:
@@ -139,7 +146,7 @@ def run(preslist, address='127.0.0.1', port=9090 , single=False, verbosity=1,
 		
 		
 		
-	web.run_app(app, host=address, port=port)
+	web.run_app(app, host=sconf.address, port=sconf.port)
 
 ## Serve subcommand
 # @param argn	Argument where "Main" stopped parsing
@@ -168,16 +175,9 @@ Options:
                         instead of directly in the root directory
 
 -l, --local <path>      Path to a local Reveal repository.
--L, --find-local        Attempt to find a local Reveal repository from a list
-                        of builtin possible locations.
--d, --dont-local        Don't search for a local version of Reveal
-                        in /usr/share/reveal.js.
--n, --no-local-route    Don't add a static route for a local Reveal repository,
-                        even if some presentations require it. 
-                        It also supresses an error message regarding a
-                        possible non-availability of a local Reveal repository.
-                        This might be useful for when the local Provider is
-                        served by another webserver
+--local-configured      Disable an the error message emitted when a
+                        presentation needs a locally served repository but it
+                        is not configured (i.e.: We've got this, don't worry)
 
 -o, --override <prov>   Override all configured presentation providers with
                         another provider. The availability of the new
@@ -201,19 +201,13 @@ Options:
 
 --                      No argument processing after this'''
 	
-	# defaults
-	port = 9090
-	# default to 0.0.0.0 for least astonishment. When you require that the
-	# presentation is only accessible on localhost, you can probably figure
-	# out that you can do that with '-a 127.0.0.1'.
-	address = '0.0.0.0'
-	verbose = 1
-	single = False
+	sconf = SConf()
 	
-	reveal_local = None	# path to local Reveal repository
 	ovr_provider = False	# Override argument
-	dont_attempt_local = False # whether or not to search for a local Reveal repository
-	serve_local = True	# whether or not to serve a local Reveal repository
+	# if the local reveal.js repository has been configured. If not,
+	# WaterSlide will emit an error message. Can be disabled with
+	# the --local-configured option
+	local_configured = False
 	
 	# list wherein all the possible presentations get loaded during argument
 	# parsing. After parsing, they get checked and loaded into the actual
@@ -222,6 +216,7 @@ Options:
 	
 	do_multiplex = False
 	mconf_hash = hash.bcrypt
+	verbose = 1
 	
 	# presenatation configuration object
 	pconf = presentation.PConf()
@@ -230,10 +225,10 @@ Options:
 	i = argn+1
 	while i < len(argv):
 		if argv[i] in ("-p", "--port"):
-			port = int(argv[i+1])
+			sconf.port = int(argv[i+1])
 			i += 1
 		elif argv[i] in ("-a", "--addresses"):
-			address = argv[i+1]
+			sconf.address = argv[i+1]
 			i += 1 # skip the next argument
 			
 		elif argv[i] in ("-v", "--verbose"):
@@ -242,24 +237,20 @@ Options:
 			verbose = 0
 			
 		elif argv[i] in ("-s", "--single"):
-			single = True
+			sconf.single = True
 			
 		elif argv[i] in ("-l", "--local"):
-			reveal_local = find_local_reveal([argv[i+1]], False)
+			sconf.reveal_local = find_local_reveal([argv[i+1]], False)
 			i += 1
-		elif argv[i] in ("-L", "--find-local"):
-			reveal_local = find_local_reveal(list(hints), False)
-		elif argv[i] in ("-d", "--dont-local"):
-			dont_attempt_local = True
-			serve_local = False
+		elif argv[i] in ("--local-configured",):
+			local_configured = True
+		
 		elif argv[i] in ("-o", "--override"):
 			temp = argv[i+1]
 			
 			if temp in presentation.Presentation.providers.keys():
 				pconf.provider = temp
-				i+=1	
-		elif argv[i] in ("-n", "--no-local-route"):
-			serve_local = False
+				i+=1
 		
 		elif argv[i] in ("-m", "--multiplex"):
 			do_multiplex = True
@@ -284,13 +275,7 @@ Options:
 		else:
 			maybe_list.append(argv[i])
 			
-		i += 1
-	
-	# if no local Reveal repository has been found, and we haven't been
-	# forbidden to search for it, or serve it locally, attempt a search
-	if not reveal_local and not dont_attempt_local:
-		reveal_local = find_local_reveal(['/usr/bin/share/reveal.js'])
-	
+		i += 1	
 
 	if ovr_provider:
 		print("Overriding Reveal.js providers with {} version".format(ovr_provider))
@@ -318,21 +303,14 @@ Options:
 	if presentation_need_locals(preslist):
 		if reveal_local and os.path.exists(os.path.join(reveal_local, 'js/reveal.js')):
 			print("Serving Reveal.js locally from ", reveal_local)
-		elif serve_local:
+		elif serve_local and not local_configured:
 			print("A presentation has 'local' configured as provider, but 'local' is not available")
 			print("Your experience might be degraded, unless Reveal is served by another webserver under /reveal.js/")
 
-
 	try:	
 		run(	preslist, 
-			address = address,
-			port = port,
-			single = single,
 			verbosity = verbose,
-			
-			# only pass in the path to the local Reveal repository if it has
-			# actually been found, and we are allowed to serve it locally
-			local_reveal = reveal_local if (reveal_local and serve_local) else None,
+			sconf = sconf,
 			mconf = mconf,
 			pconf = pconf,
 			)
