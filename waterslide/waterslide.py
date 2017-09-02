@@ -1,6 +1,6 @@
 import sys
 import os
-from waterslide import serve, presentation, version
+from waterslide import serve, presentation, version, manager
 import datetime, time
 
 ##
@@ -144,6 +144,9 @@ version            see --version'''
 			break
 		elif sys.argv[i] == "conf":
 			subcmd = conf
+			break
+		elif sys.argv[i] == "manage":
+			subcmd = manager.serve
 			break
 	
 		i += 1

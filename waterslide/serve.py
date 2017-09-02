@@ -289,7 +289,7 @@ Options:
 	preslist = presentation.loadl(
 			maybe_list,
 			pconf,
-			ptype = presentation.aiohttp_presentation_middleware,
+			ptype = presentation.HTTP_Presentation,
 			assoc = None,
 			)
 			
@@ -301,8 +301,8 @@ Options:
 	
 	# only serve local presentations if a presentation actually needs them
 	if presentation_need_locals(preslist):
-		if reveal_local and os.path.exists(os.path.join(reveal_local, 'js/reveal.js')):
-			print("Serving Reveal.js locally from ", reveal_local)
+		if sconf.reveal_local and os.path.exists(os.path.join(sconf.reveal_local, 'js/reveal.js')):
+			print("Serving Reveal.js locally from ", sconf.reveal_local)
 		elif serve_local and not local_configured:
 			print("A presentation has 'local' configured as provider, but 'local' is not available")
 			print("Your experience might be degraded, unless Reveal is served by another webserver under /reveal.js/")

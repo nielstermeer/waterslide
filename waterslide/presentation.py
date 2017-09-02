@@ -2,13 +2,11 @@ import os
 import yaml
 import json
 import re
-import pytz
 from datetime import datetime
 from urllib.parse import urlparse
 import sass
 from collections import namedtuple
-from aiohttp import web
-from waterslide import serve, multiplex
+from waterslide import serve, multiplex, httputils
 from email import utils
 
 ##
@@ -38,6 +36,7 @@ reveal_plugins = {
 	'print-pdf': '{ "src": "{}/plugin/print-pdf/print-pdf.js"}'
 }
 
+## Presentation configuration class
 class PConf:
 	
 	def __init__(self,
@@ -50,7 +49,14 @@ class PConf:
 		self.mconf = mconf
 		self.cache = cache
 		self.static = static
-		
+
+## Exception thrown whenever there is an import error. Usually causes
+#  the 'valid' member variable to be set to zero
+class ImportError(Exception):
+	def __init__(self, value = 'Import Error'):
+		self.value = value
+	def __str__(self):
+		return repr(self.value)
 
 ## Main presentation class
 # this class is where the rest of the program is build around. It represents
@@ -65,7 +71,7 @@ class Presentation:
 	## Path to the presentation
 	path = None
 	## Whether or not this object should be considered valid
-	isreal = False
+	valid = False
 	
 	## Presentation configuration dictionary
 	config = {}
@@ -99,7 +105,7 @@ class Presentation:
 		self.conf = conf
 		
 		if not conf or not os.path.isdir(path):
-			self.isreal = False
+			self.valid = False
 			return
 
 		self.path = os.path.realpath(path)
@@ -107,13 +113,23 @@ class Presentation:
 		if self.conf.mconf:
 			self.mult_conf = multiplex.create_multiplex_dict(self.conf.mconf)
 		
-			
-		self.import_presentation()
-		self.isreal = True		
+		self.try_import()
+	
+	def try_import(self):
+		try:
+			self.import_presentation()
+			self.valid = True
+		except ImportError as e:
+			print(e)
+			self.valid = False
 	
 	@property
 	def basepath(self):
 		return self.providers.get(self.provider) or self.providers['cdnjs']
+	
+	@property
+	def isreal(self):
+		return self.valid and os.path.isdir(self.path)
 	
 	## import the presentation from disk
 	# @param self	Object pointer
@@ -125,7 +141,13 @@ class Presentation:
 	# it then stores the html inside an instance member, so that we don't have
 	# to repeatedly call these functions
 	def import_presentation(self, fname = "index.html", separator = "<!-- EOC -->"):
-		with open(os.path.join(self.path, fname) , 'r') as f:
+		
+		path = os.path.join(self.path, fname)
+		
+		if not os.path.exists(path):
+			raise ImportError('Presenatation source file does not exist')
+		
+		with open(path , 'r') as f:
 		
 			fctnt = f.read()
 		
@@ -166,8 +188,7 @@ class Presentation:
 		try:
 			return yaml.load(confstr) or {}
 		except yaml.YAMLError as exc:
-			print(exc)
-			return {}
+			raise ImportError('Invalid yaml') from exc
 
 	## Function which returns a string containing a link to a stylesheet
 	# @param self		Object pointer
@@ -293,13 +314,6 @@ class Presentation:
 	def compile_sass(self, fname):
 		return sass.compile(filename=fname)
 
-## Named tuple used to abstract the framework's way of representing the response to a request. 
-#
-# Used in the request handlers, after which the request entrypoint converts
-# it to the framework's response representation. This is so that we don't have
-# to rewrite any of the request handlers whenever we change frameworks
-HTTP_Response	= namedtuple('HTTP_Response',	('code', 'headers', 'body'))
-
 ## Descendant of the Presentation class, which handles presentations served over http
 #
 # This class handles the actions which are needed to serve a presentation over
@@ -318,19 +332,51 @@ class HTTP_Presentation(Presentation):
 
 	## Last measured modification time of the source html file
 	html_mtime = 0
-
+	
+	## HTTP_Presentation initialisation function
+	#
+	# See the Presentation class for argument information.
+	#
+	# It extends the Presentation class initialisation function by also
+	# checking if 
+	def __init__(self, *args, **kwargs):
+		
+		super().__init__(*args, **kwargs)
+		
+		slug = self.slug
+		slugged = slug.lower().replace(' ', '-')
+		
+		if slug != slugged:
+			print("Directory cannot be used as a url:")
+			print("{}\n{}".format(slug, slugged))
+			print("Please ensure that the directory can be used as a url for optimum browser compatability")
+			print("You can use the third line of this message as a directory name")
+	
 	## Get the slug, to be used in the url
 	# @param self	Object pointer
 	# @return	Slug to be used in the url
+	#
+	# The slug is always based upon the directory the presentation it is
+	# stored in. For the serve subcommand, it doesn't really matter where
+	# the slug comes from (this is because it knows where all the
+	# presentations are, because they are named on the commandline, and
+	# can then deduce the slug from either the directory name or from the
+	# settings)
+	#
+	# The manage subcommand cannot do this, since it initialises the
+	# presentations on demand. The only way it can then satisfy the request
+	# is to map the requested presentation path onto the file system, and
+	# then initialising the presentation located there. There is as such
+	# no way to use slugs based upon the title.
 	@property
 	def slug(self):
-		return self.title.lower().replace(' ', '-')
+		return  os.path.split(self.path)[-1]
 	
 	## Reload the presentation into memory
 	# @param self	Object pointer
 	def reload(self):
 		print("Change detected")
-		self.import_presentation()
+		self.try_import()
 
 	## Check whether the client has the resource cached, and send the appropriate headers
 	# @param self		Object pointer
@@ -355,7 +401,7 @@ class HTTP_Presentation(Presentation):
 		
 		if self.conf.cache and imsp == lm:
 		
-			return HTTP_Response(
+			return httputils.HTTP_Response(
 				code = 304, 
 				headers = {
 					"Cache-Control":"must-revalidate"
@@ -363,7 +409,7 @@ class HTTP_Presentation(Presentation):
 				body = ""
 				)
 		else:			
-			return HTTP_Response(
+			return httputils.HTTP_Response(
 				code = 200, 
 				headers = {
 					"Cache-Control":"must-revalidate",
@@ -396,27 +442,8 @@ class HTTP_Presentation(Presentation):
 		else:
 			return self.send_notfound
 	
-	## Log a request to stdout
-	# @param self		Object pointer
-	# @param request	Request object of the framework
-	# @param response	HTTP_Response named tuple
-	def log_request(self, request, response):
-	
-		# build a query string from a dictionary
-		def build_query_string(d):
-			return '?' + '&'.join([qstr(e, d[e]) for e in d.keys()]) if len(d) else ''
-		
-		# build a query substring correctly
-		def qstr(a, b):
-			return '{}={}'.format(a,b) if b else a
-	
-		print("HTTP/{}.{} {} {} {}".format(
-			request.version.major, request.version.minor,
-			response.code,
-			request.method,
-			'{}//{}/{}{}'.format(*request.url[:3], build_query_string(request.url.query))
-			)
-		)
+	def handle(self, request):
+		return self.handle_common(request)
 	
 	## Request entry point method
 	# @param self		Object pointer
@@ -427,14 +454,11 @@ class HTTP_Presentation(Presentation):
 	# be relative to the presentation root. It accepts only HTTP_Request
 	# tuples as its request type, so we can keep this class as framework
 	# agnostic as possible.
-	def handle_common(self, request):
+	@httputils.aio_translate(rewrite = lambda r:r.match_info['tail'],
+					logger = httputils.log_request)
+	def handle(self, request):
 	
-		response = (self.figure_handler(request.url.path))(request.url.path, request)
-		
-		# print out logmessage
-		self.log_request(request, response)
-		
-		return response
+		return (self.figure_handler(request.url.path))(request.url.path, request)
 		
 	## Request handler for sending files directly from disk
 	# @param self		Object pointer
@@ -449,7 +473,7 @@ class HTTP_Presentation(Presentation):
 	def send_direct(self, path, request):
 		
 		if self.conf.static == False:
-			return HTTP_Response(
+			return httputils.HTTP_Response(
 				code = 403,
 				headers = {},
 				body = 'WaterSlide static routes have been disabled'
@@ -457,7 +481,7 @@ class HTTP_Presentation(Presentation):
 		
 		fname = os.path.join(self.path, path)
 	
-		cached = self.client_has_cached(fname, request)
+		cached = httputils.client_has_cached(fname, request, self.conf.cache)
 	
 		if cached.code == 304:
 			return cached
@@ -465,7 +489,7 @@ class HTTP_Presentation(Presentation):
 		with open(fname, 'rb') as f:
 			ctnt = f.read()
 		
-		return HTTP_Response(code = 200, headers = cached.headers, body = ctnt)
+		return httputils.HTTP_Response(code = 200, headers = cached.headers, body = ctnt)
 
 	## Request handler for sass/scss stylesheets
 	# @copydetails HTTP_Presentation.send_direct
@@ -473,13 +497,13 @@ class HTTP_Presentation(Presentation):
 	
 		fname = os.path.join(self.path, path)
 	
-		cached = self.client_has_cached(fname, request)
+		cached = httputils.client_has_cached(fname, request, self.conf.cache)
 		if cached.code == 304:
 			return cached
 		
 		ctnt = self.compile_sass(fname)
 		
-		return HTTP_Response(
+		return httputils.HTTP_Response(
 			code = 200, 
 			headers = {
 				**cached.headers,
@@ -491,7 +515,7 @@ class HTTP_Presentation(Presentation):
 	## Request handler for when a resource is not found
 	# @copydetails HTTP_Presentation.send_direct
 	def send_notfound(self, path, request):
-		return HTTP_Response(
+		return httputils.HTTP_Response(
 			code = 404, 
 			headers = {},
 			body = "404 Not Found:\n{}".format(path)
@@ -511,13 +535,13 @@ class HTTP_Presentation(Presentation):
 		
 		# only cache the html when we're not multiplexing
 		if not self.conf.mconf:
-			cached = self.client_has_cached(fname, request)
+			cached = httputils.client_has_cached(fname, request, self.conf.cache)
 			if cached.code == 304:
 				return cached
 		else:
-			cached = HTTP_Response(code = 200, headers = {}, body = "")
+			cached = httputils.HTTP_Response(code = 200, headers = {}, body = "")
 	
-		return HTTP_Response(
+		return httputils.HTTP_Response(
 			code = 200, 
 			headers = {
 				**cached.headers,
@@ -526,42 +550,10 @@ class HTTP_Presentation(Presentation):
 			body = self.get_html(True if request.url.query.get('master') != None else False)
 			)
 
-HTTP_URL	= namedtuple('HTTP_URL',	('scheme', 'host', 'path', 'query'))
-HTTP_Request	= namedtuple('HTTP_Request', 	('version', 'method', 'headers', 'url','body', 'parent_object'))
-
-## Class to act as a middleware to convert back and forth between aiohttp's
-#  representation of a request and a response to the one used by the
-#  parent class (HTTP_Presentation)
-class aiohttp_presentation_middleware(HTTP_Presentation):
-
+class managed_pres(HTTP_Presentation):
+	
 	def handle(self, request):
-		
-		# convert the aiohttp request object to a HTTP_Request tuple
-		# so that it can be processed by the HTTP_Presentation class
-		r = HTTP_Request(
-			version = request.version,
-			method = request.method,
-			headers = request.headers,
-			url = HTTP_URL(
-				scheme	= request.scheme,
-				host	= request.host,
-				# url relative to the presentation directory
-				path	= request.match_info['tail'],
-				query	= request.query,
-			),
-			body = request.read(),
-			parent_object = request
-		)
-		
-		R = self.handle_common(r)
-		
-		return web.Response(
-			status  = R.code,
-			headers = R.headers,
-			body    = R.body,
-		)
-		
-		
+		return self.send_html('', request)
 
 ## load a list of paths which might be presentations into a dictionary or list, depending on the assoc arg
 #
@@ -577,10 +569,8 @@ def loadl(l, conf, ptype = HTTP_Presentation, assoc = None):
 		preslist = {}
 	
 	for presentation_path in l:
-		obj = ptype(
-			presentation_path,
-			conf
-			)
+		obj = ptype(presentation_path, conf)
+		
 		if obj.isreal:
 			if assoc == "slug":
 				preslist[obj.assoc] = obj
