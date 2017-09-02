@@ -4,6 +4,7 @@ import os
 from aiohttp import web
 from email import utils
 from collections import namedtuple
+from waterslide import multiplex
 
 ##
 #  @defgroup httputils HTTP related utility functions/classes/definitions
@@ -148,3 +149,39 @@ def aio_translate(rewrite = lambda r:r.path, logger = lambda r,R:True):
 		
 		return decorator
 	return boot
+
+## Initialise static routes
+# @param app	Web application to attach to
+# @param pconf	Presentation configuration
+# @param sconf	Server configuration
+def init_static(app, pconf, sconf):
+
+	dirname = os.path.split(__file__)[0]
+
+	# check if static routing is enabled
+	if pconf.static == True:
+		# add a static route to resources waterslide provides
+		# (currently only a better version of the multiplex plugin).
+		app.router.add_static('/waterslide', os.path.join(dirname, 'web-resources'))
+		
+		# add a static route to a Reveal repository, if one is provided
+		if sconf.local_reveal:
+			app.router.add_static('/reveal.js/', sconf.local_reveal)
+	
+	# if the static routes have been disabled, add a diagnostic 403
+	else:
+		print("static is disabled")
+		def no_static(request):
+			return forbidden('WaterSlide static routes have been disabled')
+		
+		app.router.add_route('GET', '/reveal.js/{tail:.*}', no_static)
+		app.router.add_route('GET', '/waterslide/{tail:.*}', no_static)
+
+## Wrapper function to start up all default functionality
+# @param app	Web application to attach to
+# @param pconf	Presentation configuration
+# @param sconf	Server configuration
+# @param mconf	Multiplexing configuration
+def startup_defaults(app, pconf, sconf, mconf):
+	multiplex.start_socket_io(app, mconf)
+	init_static(app, pconf, sconf)

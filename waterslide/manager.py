@@ -1,9 +1,11 @@
 import time
 import sass
-from waterslide import presentation, cache, httputils
+from waterslide import presentation, cache, httputils, multiplex
 from aiohttp import web
 import collections
 import os
+from sys import argv
+from waterslide.serve import SConf
 
 ##
 #  @defgroup manager Presentation manager module
@@ -65,6 +67,7 @@ class Manager():
 		docroot,
 		cachesize = 32,
 		pconf	= None,
+		app	= None
 	):
 		self.docroot	= docroot
 		self.cachesize	= cachesize
@@ -74,6 +77,9 @@ class Manager():
 		# decoration time, since 'self' isn't yet defined
 		self.find.conf(depth = cachesize)
 		self.get_dyn_ctnt.conf(depth = cachesize)
+		
+		if app:
+			self.register(app)
 
 	## Register routes for the manager
 	# @param self	Object pointer
@@ -129,25 +135,48 @@ class Manager():
 		return self.get_dyn_ctnt(request.url.path).handle(request)
 
 ## Subcommand handling function for the manage subcommand
-def serve(argn, argv):
+def serve(argn):
+
+	helptext = \
+'''Manage subcommand: Manage a document root of presentations
+
+Usage:
+manage [options] <document root>
+
+Options:
+-h, --help              Show this helptext'''
 
 	docroot = './'
+
+	pconf = presentation.PConf()
+	sconf = SConf()
+	mconf = multiplex.MConf()
+
 	# continue parsing
 	i = argn
 	while i < len(argv):
 		
-		if argv[i] in ('--nop'):
-			pass
+		jmp =	pconf.parse(i) or \
+			sconf.parse(i) or \
+			mconf.parse(i)
+
+		if jmp > 0:
+			i += jmp
+			continue
+		elif argv[i] in ('-h', '--help'):
+			print(helptext, "".join([pconf.helptext, sconf.helptext, mconf.helptext]))
+			return
 		else:
 			docroot = argv[i]
 		i += 1
 	
-	man = Manager(docroot)
-	
+	pconf.load(mconf)
 	app = web.Application()
+	httputils.startup_defaults(app, pconf, sconf, mconf)
 	
+	man = Manager(docroot, pconf = pconf)
 	man.register(app)
 	
-	web.run_app(app, host='0.0.0.0', port=9090)
+	web.run_app(app, host=sconf.address, port=sconf.port)
 
 ## @}

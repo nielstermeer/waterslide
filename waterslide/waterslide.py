@@ -1,4 +1,4 @@
-import sys
+from sys import argv
 import os
 from waterslide import serve, presentation, version, manager
 import datetime, time
@@ -13,12 +13,12 @@ import datetime, time
 ## default function, triggered in "main" when no subcommand was specified
 # @param argn	Argument number of where main stopped parsing them. Isn't used
 # @param argv	Argument vector. Isn't used
-def no_func(argn, argv):
+def no_func(argn):
 	print("No subcommand provided")
 
 ## Function to show the waterslide program version
 # @copydetails no_func
-def show_version(argn, argv):
+def show_version(argn):
 	
 	helptext = \
 """Version information options:
@@ -65,7 +65,7 @@ git checkout `waterslide version --release`# checkout base release"""
 
 ## show configuration related data
 # @copydetails no_func
-def conf(argn, argv):
+def conf(argn):
 
 	helptext = \
 '''Configuration information dump subcommand
@@ -114,8 +114,8 @@ data-path         Get the path to the program's internal data. Currently only
 # "Main" function below here
 # ----
 def main():
-	helptext = \
-'''Waterslide: Presentation build program, build around Reveal.js
+	helptext = '''
+Waterslide: Presentation build program, build around Reveal.js
 Usage: waterslide [options] [subcommand [options]]
 
 Main options:
@@ -125,31 +125,32 @@ Main options:
 Subcommands:
 serve              Serve (a) presentation(s) over http
 conf               Show configuration related data, paths and such
-version            see --version'''
+version            see --version
+'''
 
 	# commandline defaults
 	subcmd = no_func
 
 	# start parsing arguments
 	i = 1
-	while i < len(sys.argv):
-		if sys.argv[i] in ("--version", "version"):
+	while i < len(argv):
+		if argv[i] in ("--version", "version"):
 			subcmd = show_version
 			break
-		elif sys.argv[i] in ("-h", "--help"):
+		elif argv[i] in ("-h", "--help"):
 			print(helptext)
 			sys.exit(0)
-		elif sys.argv[i] == "serve":
+		elif argv[i] == "serve":
 			subcmd = serve.serve
 			break
-		elif sys.argv[i] == "conf":
+		elif argv[i] == "conf":
 			subcmd = conf
 			break
-		elif sys.argv[i] == "manage":
+		elif argv[i] == "manage":
 			subcmd = manager.serve
 			break
 	
 		i += 1
 
 	# Trigger the subcommand
-	return subcmd(i, sys.argv)
+	return subcmd(i)

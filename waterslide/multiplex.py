@@ -1,4 +1,5 @@
 from passlib import hash
+from sys import argv
 import os
 import socketio
 import random, string
@@ -36,28 +37,98 @@ import time
 #  @addtogroup multiplex
 #  @{
 
+## Get the ip address of the host
+# @return Ip address of the host
+def get_ip_addr():
+	
+	ips = []
+		
+	ifaces = netifaces.interfaces() 
+	
+	for ifc in ifaces:
+	
+		if_addrs = netifaces.ifaddresses(ifc).get(netifaces.AF_INET)
+		
+		for if_addr in if_addrs or []:
+			ips.append(if_addr.get('addr'))
+
+		for i in ips:
+
+			if not i.startswith('127.'):
+				return i
+	
+	return '127.0.0.1'
+
 ## Class used to configure multiplexing. Behaves largely as a named tuple,
 # but it handles defaults
 class MConf:
 	
 	deflen = 16
 	
+	do_multiplex = False
+	just_serve = False
+	
+	MX_server = 'http://' + get_ip_addr() + ':9090'
+	rlen = 16
+	htype = hash.bcrypt
+	
 	def __init__(self, rlen = 16, htype = hash.bcrypt):
-		self._rlen  = rlen
-		self._htype = htype
-	
+		self.rlen  = rlen
+		self.htype = htype
+
 	@property
-	def rlen(self):
-		return self._rlen
+	def startserver(self):
+		return self.do_multiplex or self.just_serve
 	
-	@property
-	def htype(self):
-		return self._htype
+	helptext = '''
+-m, --multiplex         Enable multiplexing of presentations. This enables a
+                        Socket.io server, and adds the configuration to the
+                        presenations. Pass the "master" query in the url to
+                        obtain control of the presenation
+                        (e.g.: localhost/?master)
+--multiplex-length	Amount of random characters to request for
+                        the hash input
+-X, --multiplex-server  Server to point the multiplex url to. Will default to
+                        the local machine's ip address and port number if not
+                        configured
+--just-serve            Startup the multiplex server, but do not configure the
+                        presentations to multiplex. This is useful for server
+                        deployments, where the server (besides serving
+                        presentations) also functions as a remote multiplexing
+                        server.
+'''
+	def parse(self, argn):
+		
+		if argv[argn] in ("-m", "--multiplex"):
+			ret = 1
+		elif argv[argn] == "--multiplex-length":
+			self._rlen = argv[argn+1]
+			ret = 2
+		elif argv[argn] in ("-X", "--multiplex-server"):
+			
+			temp = argv[argn+1]
+			
+			if not temp.startswith('http'):
+				temp = 'http://' + temp
+			
+			self.MX_server = temp
+			ret = 2
+		elif argv[argn] in ("--just-serve",):
+			self.just_serve = True
+			return 1		
+		else:
+			return 0
+		
+		self.do_multiplex = True
+		return ret
 
 ## Start the socket io subsystem
 # @param app	aiohttp web app instance
 # @param mconf	Instance of the Mconf library, to configure the multiplexing
 def start_socket_io(app, mconf):
+
+	if not mconf.startserver:
+		return
 
 	print("Starting up SocketIO endpoint")
 	sio = socketio.AsyncServer()
@@ -91,28 +162,6 @@ def start_socket_io(app, mconf):
 def getrandom(N=MConf.deflen):
 	return ''.join(random.SystemRandom().choice(string.ascii_lowercase + string.ascii_uppercase + string.digits) for _ in range(N))
 
-## Get the ip address of the host
-# @return Ip address of the host
-def get_ip_addr():
-	
-	ips = []
-		
-	ifaces = netifaces.interfaces() 
-	
-	for ifc in ifaces:
-	
-		if_addrs = netifaces.ifaddresses(ifc).get(netifaces.AF_INET)
-		
-		for if_addr in if_addrs or []:
-			ips.append(if_addr.get('addr'))
-
-		for i in ips:
-
-			if not i.startswith('127.'):
-				return i
-	
-	return '127.0.0.1'
-
 ## Create a multiplex configuration dictionary based upon the passed settings
 # @param mconf		Multiplexing configuration
 # @return		A dictionary based upon the configuration in mconf
@@ -125,7 +174,7 @@ def create_multiplex_dict(mconf):
 	return	{
 		'secret':secret,
 		'id': socket_id,
-		'url':'http://{}:9090'.format(get_ip_addr())
+		'url': mconf.MX_server
 		}
 
 ## @}

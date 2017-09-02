@@ -1,4 +1,5 @@
 import os
+from sys import argv
 import yaml
 import json
 import re
@@ -49,6 +50,42 @@ class PConf:
 		self.mconf = mconf
 		self.cache = cache
 		self.static = static
+	
+	def load(self, mconf):
+		self.mconf = mconf if mconf.do_multiplex else None
+	
+	helptext = '''
+-o, --override <prov>   Override all configured presentation providers with
+                        another provider. The availability of the new
+                        provider is NOT checked.
+
+--no-cache              Do not send caching headers
+
+--disable-static        Disable static file routes, for when another webserver
+                        is handling them for us
+'''
+	
+	def parse(self, argn):
+	
+		if argv[argn] == "--no-cache":
+			self.cache = False
+			ret = 1
+		elif argv[argn] in ("--disable-static",):
+			self.static = False
+			ret = 1
+		elif argv[argn] in ("-o", "--override"):
+			temp = argv[i+1]
+			
+			if temp in presentation.Presentation.providers.keys():
+				self.provider = temp
+				ret = 2
+			else:
+				ret = 1
+		
+		else:
+			return 0
+		return ret
+		
 
 ## Exception thrown whenever there is an import error. Usually causes
 #  the 'valid' member variable to be set to zero
@@ -237,8 +274,8 @@ class Presentation:
 	# @param is_master	Whether or not the request currently being
 	#			processed is allowed to be a master
 	# @return		Reveal.js json initialisation string
-	def reveal_init_json(self, is_master = False):
-	
+	def reveal_init_json(self, master = False):
+		
 		# figure out which settings and plugin Reveal needs
 		# to do multiplexing
 		if self.conf.mconf:
@@ -249,14 +286,12 @@ class Presentation:
 				]
 			
 			# only pass the secret onto the master presentation(s)
-			if not is_master:
-				mult_json['secret'] = None
-			
+			if not master:
+				mult_json['multiplex']['secret'] = None
+				
 		else:
 			mult_json = {}
 			m_plugins = []
-		
-		
 	
 		init =	{**(self.config.get('init') or {}),
 			 **{"dependencies":[]},
@@ -332,26 +367,7 @@ class HTTP_Presentation(Presentation):
 
 	## Last measured modification time of the source html file
 	html_mtime = 0
-	
-	## HTTP_Presentation initialisation function
-	#
-	# See the Presentation class for argument information.
-	#
-	# It extends the Presentation class initialisation function by also
-	# checking if 
-	def __init__(self, *args, **kwargs):
-		
-		super().__init__(*args, **kwargs)
-		
-		slug = self.slug
-		slugged = slug.lower().replace(' ', '-')
-		
-		if slug != slugged:
-			print("Directory cannot be used as a url:")
-			print("{}\n{}".format(slug, slugged))
-			print("Please ensure that the directory can be used as a url for optimum browser compatability")
-			print("You can use the third line of this message as a directory name")
-	
+
 	## Get the slug, to be used in the url
 	# @param self	Object pointer
 	# @return	Slug to be used in the url
@@ -376,48 +392,7 @@ class HTTP_Presentation(Presentation):
 	# @param self	Object pointer
 	def reload(self):
 		print("Change detected")
-		self.try_import()
-
-	## Check whether the client has the resource cached, and send the appropriate headers
-	# @param self		Object pointer
-	# @param request	The request currently being processed
-	# @param filename	Source file of the request
-	# @return		Boolean if the the client has the resource cached,
-	#			so that the calling function knows what to do further
-	def client_has_cached(self, filename, request):
-	
-		# decode the last modified header here instead of relying on
-		# a specific implementation which decodes it for us
-		imsp = datetime(
-			*utils.parsedate(
-				request.headers.get(	'if-modified-since',
-							'Thu, 1 Jan 1970 00:00:00 GMT'
-						)
-					)[:6]
-			).replace(tzinfo=pytz.utc)
-		
-		# strip of the microseconds, so we can compare the objects without having to round.
-		lm = datetime.utcfromtimestamp(os.path.getmtime(filename)).replace(tzinfo=pytz.utc, microsecond = 0)
-		
-		if self.conf.cache and imsp == lm:
-		
-			return httputils.HTTP_Response(
-				code = 304, 
-				headers = {
-					"Cache-Control":"must-revalidate"
-					} if self.conf.cache else {},
-				body = ""
-				)
-		else:			
-			return httputils.HTTP_Response(
-				code = 200, 
-				headers = {
-					"Cache-Control":"must-revalidate",
-					"Last-Modified": lm.strftime('%a, %d %b %Y %H:%M:%S GMT')
-					} if self.conf.cache else {},
-				body = ""
-				)
-			
+		self.try_import()			
 			
 	## Figure out the handler needed to process the current request
 	# @param self		Object pointer
@@ -441,9 +416,6 @@ class HTTP_Presentation(Presentation):
 				return self.send_direct
 		else:
 			return self.send_notfound
-	
-	def handle(self, request):
-		return self.handle_common(request)
 	
 	## Request entry point method
 	# @param self		Object pointer
@@ -540,14 +512,16 @@ class HTTP_Presentation(Presentation):
 				return cached
 		else:
 			cached = httputils.HTTP_Response(code = 200, headers = {}, body = "")
-	
+		
+		is_master = request.url.query.get('master') != None
+		
 		return httputils.HTTP_Response(
 			code = 200, 
 			headers = {
 				**cached.headers,
 				'Content-type':'text/html'
 				},
-			body = self.get_html(True if request.url.query.get('master') != None else False)
+			body = self.get_html(is_master)
 			)
 
 class managed_pres(HTTP_Presentation):

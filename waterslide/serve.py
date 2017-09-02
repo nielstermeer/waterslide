@@ -1,11 +1,11 @@
-import sys
+from sys import argv
 import os
 import re
 from urllib.parse import urlparse, urlunparse
 from aiohttp import web
 from passlib import hash
 
-from waterslide import presentation, multiplex
+from waterslide import presentation, multiplex, httputils
 
 ##
 #  @defgroup serve HTTP server module
@@ -52,7 +52,7 @@ class SConf():
 	
 	def __init__(
 		self,
-		address	= '127.0.0.1',
+		address	= '0.0.0.0',
 		port	= 9090,
 		single	= False,
 		local_reveal = None,
@@ -61,6 +61,33 @@ class SConf():
 		self.port	= port
 		self.single	= single
 		self.local_reveal = local_reveal
+
+	helptext = '''
+-p, --port <port>       Port for the webserver to listen to
+                        (port 9090 is the default)
+-a, --addresses <addr>  Addresses to listen to (0.0.0.0 is the default)
+-s, --single            Serve a single presentation in its own directory,
+                        instead of directly in the root directory
+-l, --local <path>      Path to a local Reveal repository.
+'''
+
+	def parse(self, argn):
+		if argv[argn] in ("-p", "--port"):
+			self.port = int(args.argv[argn+1])
+			ret = 2
+		elif argv[argn] in ("-a", "--addresses"):
+			self.address = argv[argn+1]
+			ret = 2
+		elif argv[argn] in ("-s", "--single"):
+			self.single = True
+			ret = 1
+		elif argv[argn] in ("-l", "--local"):
+			self.reveal_local = find_local_reveal([argv[argn+1]], False)
+			ret = 1
+		
+		else:
+			return 0
+		return ret
 
 ## Wrapper to initialise and start the webapp
 # @param preslist	List of presentations. Required
@@ -84,11 +111,7 @@ def run(preslist, verbosity=1, sconf = None, mconf = None, pconf = None):
 
 	app = web.Application()
 	
-	if mconf:
-		multiplex.start_socket_io(app, mconf)
-		
-	
-	dirname = os.path.split(__file__)[0]
+	httputils.startup_defaults(app, pconf, sconf, mconf)
 	
 	# if there is only one presentation, serve it from the document root
 	# unless it is specified that we also want single presentations to be
@@ -124,27 +147,6 @@ def run(preslist, verbosity=1, sconf = None, mconf = None, pconf = None):
 	# add the presenatations to the app
 	for p in preslist:
 		add(p)
-	
-	# check if static routing is enabled
-	if pconf.static == True:
-		# add a static route to resources waterslide provides
-		# (currently only a better version of the multiplex plugin).
-		app.router.add_static('/waterslide', os.path.join(dirname, 'web-resources'))
-		
-		# add a static route to a Reveal repository, if one is provided
-		if sconf.local_reveal:
-			app.router.add_static('/reveal.js/', sconf.local_reveal)
-	
-	# if the static routes have been disabled, add a diagnostic 403
-	else:
-		print("static is disabled")
-		def no_static(request):
-			return forbidden('WaterSlide static routes have been disabled')
-		
-		app.router.add_route('GET', '/reveal.js/{tail:.*}', no_static)
-		app.router.add_route('GET', '/waterslide/{tail:.*}', no_static)
-		
-		
 		
 	web.run_app(app, host=sconf.address, port=sconf.port)
 
@@ -155,7 +157,7 @@ def run(preslist, verbosity=1, sconf = None, mconf = None, pconf = None):
 # This function handles the serve subcommands features. It parses the rest of
 # the commandline, after where main stopped parsing (i.e.: the arguments meant
 # for the subcommand.
-def serve(argn, argv):
+def serve(argn):
 
 	helptext = \
 '''Serve subcommand: Serve a presentation over HTTP
@@ -167,43 +169,18 @@ Note that when an option conflicts with any option which came previously,
 the last one takes precedence
 
 Options:
--p, --port <port>       Port for the webserver to listen to
-                        (port 9090 is the default)
--a, --addresses <addr>  Addresses to listen to (0.0.0.0 is the default)
+--                      No argument processing will occur after this
 
--s, --single            Serve a single presentation in its own directory,
-                        instead of directly in the root directory
-
--l, --local <path>      Path to a local Reveal repository.
 --local-configured      Disable an the error message emitted when a
                         presentation needs a locally served repository but it
                         is not configured (i.e.: We've got this, don't worry)
-
--o, --override <prov>   Override all configured presentation providers with
-                        another provider. The availability of the new
-                        provider is NOT checked.
-
--m, --multiplex         Enable multiplexing of presentations. This enables a
-                        Socket.io server, and adds the configuration to the
-                        presenations. Pass the "master" query in the url to
-                        obtain control of the presenation
-                        (e.g.: localhost/?master)
-
---no-cache              Do not send caching headers
-
---disable-static        Disable static file routes, for when another webserver
-                        is handling them for us
 
 -v, --verbose           Be verbose
 -z, --silent            Be silent
 
 -h, --help              Show this helptext
+'''
 
---                      No argument processing after this'''
-	
-	sconf = SConf()
-	
-	ovr_provider = False	# Override argument
 	# if the local reveal.js repository has been configured. If not,
 	# WaterSlide will emit an error message. Can be disabled with
 	# the --local-configured option
@@ -214,55 +191,36 @@ Options:
 	# presentation list
 	maybe_list = []
 	
-	do_multiplex = False
 	mconf_hash = hash.bcrypt
 	verbose = 1
 	
 	# presenatation configuration object
 	pconf = presentation.PConf()
+	sconf = SConf()
+	mconf = multiplex.MConf()
 	
 	# continue parsing
 	i = argn+1
 	while i < len(argv):
-		if argv[i] in ("-p", "--port"):
-			sconf.port = int(argv[i+1])
-			i += 1
-		elif argv[i] in ("-a", "--addresses"):
-			sconf.address = argv[i+1]
-			i += 1 # skip the next argument
+	
+		jmp =	pconf.parse(i) or \
+			sconf.parse(i) or \
+			mconf.parse(i)
+		
+		if jmp > 0:
+			i += jmp
+			continue
 			
 		elif argv[i] in ("-v", "--verbose"):
 			verbose = 2
 		elif argv[i] in ("-z", "--silent"):
 			verbose = 0
-			
-		elif argv[i] in ("-s", "--single"):
-			sconf.single = True
-			
-		elif argv[i] in ("-l", "--local"):
-			sconf.reveal_local = find_local_reveal([argv[i+1]], False)
-			i += 1
+
 		elif argv[i] in ("--local-configured",):
 			local_configured = True
 		
-		elif argv[i] in ("-o", "--override"):
-			temp = argv[i+1]
-			
-			if temp in presentation.Presentation.providers.keys():
-				pconf.provider = temp
-				i+=1
-		
-		elif argv[i] in ("-m", "--multiplex"):
-			do_multiplex = True
-		
-		elif argv[i] in ("--no-cache",):
-			pconf.cache = False
-		
-		elif argv[i] in ("--disable-static",):
-			pconf.static = False
-		
 		elif argv[i] in ("-h", "--help"):
-			print(helptext)
+			print(helptext, "".join([pconf.helptext, sconf.helptext, mconf.helptext]))
 			return
 		
 		# stop intrepeting arguments
@@ -277,14 +235,11 @@ Options:
 			
 		i += 1	
 
-	if ovr_provider:
-		print("Overriding Reveal.js providers with {} version".format(ovr_provider))
-
+	if pconf.provider:
+		print("Overriding Reveal.js providers with {} version".format(pconf.provider))
 
 	# load the settings
-	mconf = multiplex.MConf(htype = mconf_hash, rlen=multiplex.MConf.deflen) if do_multiplex else None
-
-	pconf.mconf = mconf
+	pconf.load(mconf)
 
 	preslist = presentation.loadl(
 			maybe_list,
