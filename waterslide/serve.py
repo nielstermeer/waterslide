@@ -198,6 +198,7 @@ Options:
 	pconf = presentation.PConf()
 	sconf = SConf()
 	mconf = multiplex.MConf()
+	mconf.autoslave = True
 	
 	# continue parsing
 	i = argn+1

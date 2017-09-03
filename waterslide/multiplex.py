@@ -1,4 +1,3 @@
-from passlib import hash
 from sys import argv
 import os
 import socketio
@@ -6,6 +5,7 @@ import random, string
 import netifaces
 import collections
 import time
+import passlib
 
 ##
 #  @defgroup multiplex Presentation multiplexing module
@@ -59,6 +59,20 @@ def get_ip_addr():
 	
 	return '127.0.0.1'
 
+## Wrapper to standarise multiplex secrets and socketId's. Wraps bcrypt.
+#
+# This kind of wrapper is useful for when other hashes are an option, since
+# these wrappers provide a standarised interface.
+class mh_bcrypt:
+	def encrypt(plain):
+		return passlib.hash.bcrypt.encrypt(plain)
+	
+	def verify(plain, digest):
+		return passlib.hash.bcrypt.verify(plain, digest)
+
+algs_avail = {
+"bcrypt": mh_bcrypt,
+}
 ## Class used to configure multiplexing. Behaves largely as a named tuple,
 # but it handles defaults
 class MConf:
@@ -70,9 +84,11 @@ class MConf:
 	
 	MX_server = 'http://' + get_ip_addr() + ':9090'
 	rlen = 16
-	htype = hash.bcrypt
+	htype = mh_bcrypt
 	
-	def __init__(self, rlen = 16, htype = hash.bcrypt):
+	autoslave = False
+	
+	def __init__(self, rlen = 16, htype = mh_bcrypt):
 		self.rlen  = rlen
 		self.htype = htype
 
@@ -96,6 +112,16 @@ class MConf:
                         deployments, where the server (besides serving
                         presentations) also functions as a remote multiplexing
                         server.
+
+--autoslave             Autoslave any client which isn't a master. Is the
+                        default for the serve subcommand
+--no-autoslave          Disable autoslaving. Is the default for the
+                        manage subcommand
+
+-A, --mh_algorithm      Configure the hashing algorithm used to transform the
+                        automatically generated secret to a socket ID.
+                        Currently, only "bcrypt" is available, but this option
+                        is provided for forwards compatability
 '''
 	def parse(self, argn):
 		
@@ -103,6 +129,11 @@ class MConf:
 			ret = 1
 		elif argv[argn] == "--multiplex-length":
 			self._rlen = argv[argn+1]
+			ret = 2
+		elif argv[argn] in ('-A','--mh_algorithm') \
+		 and argv[argn] in algs_avail.keys():
+		 
+			self.htype = algs_avail[argv[argn]]
 			ret = 2
 		elif argv[argn] in ("-X", "--multiplex-server"):
 			
@@ -115,7 +146,13 @@ class MConf:
 			ret = 2
 		elif argv[argn] in ("--just-serve",):
 			self.just_serve = True
-			return 1		
+			return 1
+		elif argv[argn] == "--autoslave":
+			self.autoslave = True
+			ret = 1
+		elif argv[argn] == "--no-autoslave":
+			self.autoslave = False
+			ret = 1
 		else:
 			return 0
 		

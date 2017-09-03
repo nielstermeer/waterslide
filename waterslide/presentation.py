@@ -269,16 +269,39 @@ class Presentation:
 		return self.link_resources(self.link_stylesheet, 
 			csss + (self.config.get('styles') or []))
 	
+	def do_multiplex(self, master, slave):
+		
+		# Multiplexing is disabled
+		if not self.conf.mconf:
+			return False
+		
+		# Client is not a master
+		if master != None:
+			return True
+		
+		# Client specifically requested to be a slave
+		if slave != None:
+			return True
+		
+		# autoslaving is disabled
+		if self.conf.mconf.autoslave == False:
+			return False
+		# autoslave any client which isn't a master, since autoslaving
+		# is enabled
+		else:
+			return True
+		
+	
 	## Get the Reveal.js initialisation json string
 	# @param self		Object pointer
 	# @param is_master	Whether or not the request currently being
 	#			processed is allowed to be a master
 	# @return		Reveal.js json initialisation string
-	def reveal_init_json(self, master = False):
+	def reveal_init_json(self, master, slave):
 		
 		# figure out which settings and plugin Reveal needs
 		# to do multiplexing
-		if self.conf.mconf:
+		if self.do_multiplex(master, slave):
 			mult_json = {"multiplex": self.mult_conf}
 			m_plugins = [
 				"{ src: '//cdn.socket.io/socket.io-1.3.5.js', async: true }",
@@ -286,7 +309,7 @@ class Presentation:
 				]
 			
 			# only pass the secret onto the master presentation(s)
-			if not master:
+			if master == None:
 				mult_json['multiplex']['secret'] = None
 				
 		else:
@@ -317,7 +340,7 @@ class Presentation:
 	# This function combines all the functions which prepare bits
 	# of the presentation, such as the link generators. It also adds the
 	# the title in the head.
-	def get_html(self, is_master = False):
+	def get_html(self, is_master, is_slave):
 	
 		return str.join('',
 			(
@@ -336,7 +359,7 @@ class Presentation:
 				[self.basepath + "/js/reveal.js"]
 				),				
 			"<script>Reveal.initialize({});</script>".format(
-					self.reveal_init_json(is_master)
+					self.reveal_init_json(is_master, is_slave)
 				),
 			"</body></html>",
 			)
@@ -513,7 +536,8 @@ class HTTP_Presentation(Presentation):
 		else:
 			cached = httputils.HTTP_Response(code = 200, headers = {}, body = "")
 		
-		is_master = request.url.query.get('master') != None
+		is_master = request.url.query.get('master')
+		is_slave = request.url.query.get('slave')
 		
 		return httputils.HTTP_Response(
 			code = 200, 
@@ -521,7 +545,7 @@ class HTTP_Presentation(Presentation):
 				**cached.headers,
 				'Content-type':'text/html'
 				},
-			body = self.get_html(is_master)
+			body = self.get_html(is_master, is_slave)
 			)
 
 class managed_pres(HTTP_Presentation):
