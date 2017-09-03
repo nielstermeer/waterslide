@@ -185,3 +185,31 @@ def init_static(app, pconf, sconf):
 def startup_defaults(app, pconf, sconf, mconf):
 	multiplex.start_socket_io(app, mconf)
 	init_static(app, pconf, sconf)
+
+## Named tuple which can be used to represent a basicauth header
+basicauth = namedtuple('basicauth', ['uname', 'passwd'])
+
+## Decode a suspected Basic Auth header
+# @param header	The header text
+# @param fail	Value returned on failure
+def decode_basic_auth(header, fail = basicauth(None, None)):
+	
+	if not header:
+		return fail
+	
+	auth = header.split(' ')
+	
+	if len(auth) != 2 or auth[0] != 'Basic':
+		return fail
+		
+	try:
+		astr = base64.b64decode(auth[1]).decode().split(':', 1)
+	except:
+		print("Malformed Authentication header")
+		return fail
+	
+	if len(astr) != 2:
+		return fail
+	
+	return basicauth(*astr)
+

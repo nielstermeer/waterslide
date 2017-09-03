@@ -5,7 +5,8 @@ import random, string
 import netifaces
 import collections
 import time
-import passlib
+import hashlib
+from waterslide.httputils import HTTP_Response
 
 ##
 #  @defgroup multiplex Presentation multiplexing module
@@ -59,19 +60,19 @@ def get_ip_addr():
 	
 	return '127.0.0.1'
 
-## Wrapper to standarise multiplex secrets and socketId's. Wraps bcrypt.
+## Wrapper to standarise multiplex secrets and socketId's. Wraps sha512.
 #
 # This kind of wrapper is useful for when other hashes are an option, since
 # these wrappers provide a standarised interface.
-class mh_bcrypt:
+class mh_sha512:
 	def encrypt(plain):
-		return passlib.hash.bcrypt.encrypt(plain)
+		return hashlib.sha512(bytes(plain, 'utf-8')).hexdigest()
 	
 	def verify(plain, digest):
-		return passlib.hash.bcrypt.verify(plain, digest)
+		return digest == mh_sha512.encrypt(plain)
 
 algs_avail = {
-"bcrypt": mh_bcrypt,
+"sha512": mh_sha512,
 }
 ## Class used to configure multiplexing. Behaves largely as a named tuple,
 # but it handles defaults
@@ -84,13 +85,9 @@ class MConf:
 	
 	MX_server = 'http://' + get_ip_addr() + ':9090'
 	rlen = 16
-	htype = mh_bcrypt
+	htype = mh_sha512
 	
 	autoslave = False
-	
-	def __init__(self, rlen = 16, htype = mh_bcrypt):
-		self.rlen  = rlen
-		self.htype = htype
 
 	@property
 	def startserver(self):
@@ -126,6 +123,7 @@ class MConf:
 	def parse(self, argn):
 		
 		if argv[argn] in ("-m", "--multiplex"):
+			self.do_multiplex = True
 			ret = 1
 		elif argv[argn] == "--multiplex-length":
 			self._rlen = argv[argn+1]
@@ -155,8 +153,6 @@ class MConf:
 			ret = 1
 		else:
 			return 0
-		
-		self.do_multiplex = True
 		return ret
 
 ## Start the socket io subsystem
@@ -184,7 +180,7 @@ def start_socket_io(app, mconf):
 			print(t, "refused to forward for", sid)
 			return
 
-		print(t, sid, data['state'])
+		print(t, data['socketId'][:10], data['state'])
 		
 		# protect the secret
 		data['secret'] = None
@@ -213,5 +209,5 @@ def create_multiplex_dict(mconf):
 		'id': socket_id,
 		'url': mconf.MX_server
 		}
-
+	
 ## @}

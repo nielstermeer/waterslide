@@ -9,6 +9,8 @@ import sass
 from collections import namedtuple
 from waterslide import serve, multiplex, httputils
 from email import utils
+import base64
+import random
 
 ##
 #  @defgroup presentation Presentation module
@@ -52,7 +54,7 @@ class PConf:
 		self.static = static
 	
 	def load(self, mconf):
-		self.mconf = mconf if mconf.do_multiplex else None
+		self.mconf = mconf
 	
 	helptext = '''
 -o, --override <prov>   Override all configured presentation providers with
@@ -115,8 +117,8 @@ class Presentation:
 	## Configuration object
 	conf = None
 	
-	## Multiplex configuration which will be send to Reveal
-	mult_conf = {}
+	## server config
+	sconf = {}
 	
 	## list of providers
 	providers = {
@@ -147,14 +149,12 @@ class Presentation:
 
 		self.path = os.path.realpath(path)
 		
-		if self.conf.mconf:
-			self.mult_conf = multiplex.create_multiplex_dict(self.conf.mconf)
-		
 		self.try_import()
 	
 	def try_import(self):
 		try:
 			self.import_presentation()
+			self.import_configuration()
 			self.valid = True
 		except ImportError as e:
 			print(e)
@@ -200,7 +200,14 @@ class Presentation:
 			else:
 				self.provider = self.conf.provider or "cdnjs"
 				self.html_base = fctnt
-				
+	
+	def import_configuration(self):
+		
+		cfile = os.path.join(self.path, 'conf.yaml')
+		
+		if os.path.exists(cfile):
+			with open(cfile, 'r') as f:
+				sconf = self.parse_configuration(f.read())
 	
 	## Function which figures out the title
 	# @param self	Object pointer
@@ -269,48 +276,29 @@ class Presentation:
 		return self.link_resources(self.link_stylesheet, 
 			csss + (self.config.get('styles') or []))
 	
-	def do_multiplex(self, master, slave):
-		
-		# Multiplexing is disabled
-		if not self.conf.mconf:
-			return False
-		
-		# Client is not a master
-		if master != None:
-			return True
-		
-		# Client specifically requested to be a slave
-		if slave != None:
-			return True
-		
-		# autoslaving is disabled
-		if self.conf.mconf.autoslave == False:
-			return False
-		# autoslave any client which isn't a master, since autoslaving
-		# is enabled
-		else:
-			return True
-		
+	## Dummy function
+	def do_multiplex(self, request):
+		return False
+	
+	## Dummy function
+	def get_mdict(self, request):
+		return {}
 	
 	## Get the Reveal.js initialisation json string
 	# @param self		Object pointer
 	# @param is_master	Whether or not the request currently being
 	#			processed is allowed to be a master
 	# @return		Reveal.js json initialisation string
-	def reveal_init_json(self, master, slave):
+	def reveal_init_json(self, request):
 		
 		# figure out which settings and plugin Reveal needs
 		# to do multiplexing
-		if self.do_multiplex(master, slave):
-			mult_json = {"multiplex": self.mult_conf}
+		if self.do_multiplex(request):
+			mult_json = {"multiplex": self.get_mdict(request)}
 			m_plugins = [
 				"{ src: '//cdn.socket.io/socket.io-1.3.5.js', async: true }",
 				"{ src: '/waterslide/multiplex.js', async: true}"
 				]
-			
-			# only pass the secret onto the master presentation(s)
-			if master == None:
-				mult_json['multiplex']['secret'] = None
 				
 		else:
 			mult_json = {}
@@ -340,7 +328,7 @@ class Presentation:
 	# This function combines all the functions which prepare bits
 	# of the presentation, such as the link generators. It also adds the
 	# the title in the head.
-	def get_html(self, is_master, is_slave):
+	def get_html(self, request = None):
 	
 		return str.join('',
 			(
@@ -355,11 +343,12 @@ class Presentation:
 			self.link_resources(self.link_javascript, 
 				(self.config.get('scripts') or []) +
 				# only add head.js if we actually have plugins, or when we're multiplexing
-				([self.basepath + "/lib/js/head.min.js"] if (self.config.get('plugins') or self.conf.mconf) else []) +
+				([self.basepath + "/lib/js/head.min.js"]
+					if (self.config.get('plugins') or self.conf.mconf.do_multiplex) else []) +
 				[self.basepath + "/js/reveal.js"]
 				),				
 			"<script>Reveal.initialize({});</script>".format(
-					self.reveal_init_json(is_master, is_slave)
+					self.reveal_init_json(request)
 				),
 			"</body></html>",
 			)
@@ -390,7 +379,17 @@ class HTTP_Presentation(Presentation):
 
 	## Last measured modification time of the source html file
 	html_mtime = 0
-
+	
+	## Multiplex configuration which will be send to Reveal
+	mult_randomness = None
+	mult_nosession = None
+	
+	def __init__(self, *args, **kwargs):
+		
+		super().__init__(*args, **kwargs)
+		
+		self.setup_multiplex()
+	
 	## Get the slug, to be used in the url
 	# @param self	Object pointer
 	# @return	Slug to be used in the url
@@ -411,12 +410,67 @@ class HTTP_Presentation(Presentation):
 	def slug(self):
 		return  os.path.split(self.path)[-1]
 	
+	def setup_multiplex(self):
+		
+		rlen = self.conf.mconf.rlen
+		nslen = random.randint(2, 8)
+		
+		self.mult_randomness	= multiplex.getrandom(rlen)
+		self.mult_nosession	= multiplex.getrandom(nslen)
+	
+	def do_multiplex(self, request):
+		
+		# Do nothing if we arent processing a request
+		if not request:
+			return False
+		
+		master = request.url.query.get('master')
+		slave  = request.url.query.get('slave')
+		
+		lmconf = self.sconf.get('multiplex', {})
+		
+		# Multiplexing is disabled
+		if not (self.conf.mconf.do_multiplex or lmconf.get('enabled')):
+			return False
+		
+		# Client is not a master
+		if master != None:
+			return True
+		
+		# Client specifically requested to be a slave
+		if slave != None:
+			return True
+		
+		# autoslaving is disabled
+		if self.conf.mconf.autoslave == False or lmconf.get('autoslave'):
+			return False
+		# autoslave any client which isn't a master, since autoslaving
+		# is enabled
+		else:
+			return True
+	
 	## Reload the presentation into memory
 	# @param self	Object pointer
 	def reload(self):
 		print("Change detected")
 		self.try_import()			
-			
+	
+	def get_mdict(self, request):
+		
+		master = request.url.query.get('master')
+		session = httputils.decode_basic_auth(request.headers.get('Authorization')).uname or \
+				master or \
+				request.url.query.get('slave') or \
+				self.mult_nosession
+				
+		secret = self.mult_randomness + session
+		
+		return { # only pass the secret onto the master presentation(s)
+			'secret': secret if master != None else None,
+			'id': self.conf.mconf.htype.encrypt(secret),
+			'url': self.conf.mconf.MX_server
+		}
+	
 	## Figure out the handler needed to process the current request
 	# @param self		Object pointer
 	# @param request	Request currently being processed
@@ -529,15 +583,12 @@ class HTTP_Presentation(Presentation):
 			self.reload()
 		
 		# only cache the html when we're not multiplexing
-		if not self.conf.mconf:
+		if not self.conf.mconf.do_multiplex:
 			cached = httputils.client_has_cached(fname, request, self.conf.cache)
 			if cached.code == 304:
 				return cached
 		else:
 			cached = httputils.HTTP_Response(code = 200, headers = {}, body = "")
-		
-		is_master = request.url.query.get('master')
-		is_slave = request.url.query.get('slave')
 		
 		return httputils.HTTP_Response(
 			code = 200, 
@@ -545,7 +596,7 @@ class HTTP_Presentation(Presentation):
 				**cached.headers,
 				'Content-type':'text/html'
 				},
-			body = self.get_html(is_master, is_slave)
+			body = self.get_html(request)
 			)
 
 class managed_pres(HTTP_Presentation):

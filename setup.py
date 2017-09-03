@@ -61,8 +61,6 @@ setup(
 		'libsass',
 		'python-socketio',
 		'PyYAML',
-		'passlib',
-		'bcrypt',
 		'netifaces',
 		'pytz',
 	],
