@@ -10,7 +10,6 @@ from collections import namedtuple
 from waterslide import serve, multiplex, httputils
 from email import utils
 import base64
-import random
 
 ##
 #  @defgroup presentation Presentation module
@@ -107,6 +106,8 @@ class Presentation:
 	
 	## The presenation core
 	html_base = ""
+	## Source files modification time
+	src_mtime = 0
 	## Path to the presentation
 	path = None
 	## Whether or not this object should be considered valid
@@ -168,6 +169,24 @@ class Presentation:
 	def isreal(self):
 		return self.valid and os.path.isdir(self.path)
 	
+	## Get the mtimes of the source files which are used to build the
+	#  presentation's html tree
+	#
+	# Currently the index file and the configuration file are checked
+	@property
+	def mtimes(self):
+		fname = os.path.join(self.path, "index.html")
+		cname = os.path.join(self.path, "conf.yaml")
+		
+		mtimes = []
+		
+		for f in (fname, cname):
+			if os.path.exists(f):
+				mtimes.append(os.path.getmtime(f))
+
+		return max(mtimes)
+		
+		
 	## import the presentation from disk
 	# @param self	Object pointer
 	# @param fname	Filename containing the html and settings of the presentation
@@ -190,7 +209,7 @@ class Presentation:
 		
 			conf_and_html = re.split(separator, fctnt, 1)
 		
-			self.html_mtime = os.path.getmtime(os.path.join(self.path, "index.html"))
+			self.src_mtime = self.mtimes
 		
 			if len(conf_and_html) == 2:
 				self.config = self.parse_configuration(conf_and_html[0])
@@ -201,13 +220,15 @@ class Presentation:
 				self.provider = self.conf.provider or "cdnjs"
 				self.html_base = fctnt
 	
+	## Import the configuration file, if it exists
+	# @param self	Object pointer
 	def import_configuration(self):
 		
 		cfile = os.path.join(self.path, 'conf.yaml')
 		
 		if os.path.exists(cfile):
 			with open(cfile, 'r') as f:
-				sconf = self.parse_configuration(f.read())
+				self.sconf = self.parse_configuration(f.read())
 	
 	## Function which figures out the title
 	# @param self	Object pointer
@@ -277,10 +298,14 @@ class Presentation:
 			csss + (self.config.get('styles') or []))
 	
 	## Dummy function
+	#
+	# This function get's overridden in HTTP_Presentation
 	def do_multiplex(self, request):
 		return False
 	
 	## Dummy function
+	#
+	# This function get's overridden in HTTP_Presentation
 	def get_mdict(self, request):
 		return {}
 	
@@ -376,14 +401,12 @@ class Presentation:
 # consider /foo/bar.js within the foo presentation. The url which is then
 # passed to the foo object should be 'bar.js'.
 class HTTP_Presentation(Presentation):
-
-	## Last measured modification time of the source html file
-	html_mtime = 0
 	
 	## Multiplex configuration which will be send to Reveal
 	mult_randomness = None
 	mult_nosession = None
 	
+	## Wrapper init function. Calls parent init first, then initialises multiplexing
 	def __init__(self, *args, **kwargs):
 		
 		super().__init__(*args, **kwargs)
@@ -410,14 +433,23 @@ class HTTP_Presentation(Presentation):
 	def slug(self):
 		return  os.path.split(self.path)[-1]
 	
+	## Multiplex initialisation method
+	# @param self	Object pointer
+	#
+	# this method gathers randomness for the secret and the socket-Id
+	#
+	# The mult_nosession randomness is used for when no session is provided,
+	# as in "/?master" vs "/?master=foo".
 	def setup_multiplex(self):
 		
 		rlen = self.conf.mconf.rlen
-		nslen = random.randint(2, 8)
 		
 		self.mult_randomness	= multiplex.getrandom(rlen)
-		self.mult_nosession	= multiplex.getrandom(nslen)
+		self.mult_nosession	= multiplex.getrandom(6)
 	
+	## Check if a request is allowed to get multiplexing configuration
+	# @param self		Object pointer
+	# @param request	Request being processed
 	def do_multiplex(self, request):
 		
 		# Do nothing if we arent processing a request
@@ -442,27 +474,40 @@ class HTTP_Presentation(Presentation):
 			return True
 		
 		# autoslaving is disabled
-		if self.conf.mconf.autoslave == False or lmconf.get('autoslave'):
+		if self.conf.mconf.autoslave == False or lmconf.get('autoslave') != True:
 			return False
 		# autoslave any client which isn't a master, since autoslaving
 		# is enabled
 		else:
 			return True
 	
-	## Reload the presentation into memory
+	## Reload the presentation into memory, if it needs to be reloaded
 	# @param self	Object pointer
 	def reload(self):
-		print("Change detected")
-		self.try_import()			
+		
+		if self.mtimes != self.src_mtime:
+			print("Change detected")
+			self.try_import()			
 	
+	## Get the multiplexing session name
+	# @param self	Object pointer
+	# @param request	Request being processed
+	# @param default	Default session name. Can be used to return a
+	# 			signalling value instead of the default
+	#			session name when no session is provided
+	def get_session_name(self, request, default = None):
+		default = self.mult_nosession if default in ('', None) else default
+		
+		return 		request.url.query.get('master') or \
+				request.url.query.get('slave') or \
+				default
+	
+	## Create a multiplexing dictionary
 	def get_mdict(self, request):
 		
 		master = request.url.query.get('master')
-		session = httputils.decode_basic_auth(request.headers.get('Authorization')).uname or \
-				master or \
-				request.url.query.get('slave') or \
-				self.mult_nosession
-				
+		session = self.get_session_name(request)
+		
 		secret = self.mult_randomness + session
 		
 		return { # only pass the secret onto the master presentation(s)
@@ -569,6 +614,40 @@ class HTTP_Presentation(Presentation):
 			headers = {},
 			body = "404 Not Found:\n{}".format(path)
 			)
+	
+	## Authorise requests to be a master of a presentation
+	# @param self		Object pointer
+	# @param request	Request being authorised
+	def authorise(self, request):
+
+		master = request.url.query.get('master')
+		
+		session = self.get_session_name(request, None)
+		
+		if master == None:
+			return httputils.HTTP_Response(code = 200, headers = {}, body = '')
+		
+		auth = httputils.decode_basic_auth(request.headers.get('Authorization'))
+		stored = self.sconf.get('multiplex', {}).get('auth')
+		
+		if stored:
+			local = httputils.basicauth(uname = stored.get('uname'),
+						passwd = stored.get('passwd'))
+		else:	# send okay if no credentials have been defined
+			return httputils.HTTP_Response(code = 200, headers = {}, body = '')
+		
+		if auth == local:
+			return httputils.HTTP_Response(code = 200, headers = {}, body = '')
+		else:
+			return httputils.HTTP_Response(
+				code = 401,
+				headers = {
+					'WWW-Authenticate': 'Basic realm={} {}'
+						.format(self.title, session),
+					},
+				body = ''
+			)
+		
 
 	## Request handler for the html presentation source
 	# @copydetails HTTP_Presentation.send_direct
@@ -579,15 +658,18 @@ class HTTP_Presentation(Presentation):
 		
 		fname = os.path.join(self.path, "index.html")
 		
-		if os.path.getmtime(fname) != self.html_mtime:
-			self.reload()
-		
+		self.reload()
+
 		# only cache the html when we're not multiplexing
-		if not self.conf.mconf.do_multiplex:
-			cached = httputils.client_has_cached(fname, request, self.conf.cache)
+		if not self.conf.mconf.do_multiplex and not self.sconf.get('multiplex', {}).get('enabled'):
+			cached = httputils.client_has_cached(fname, request, do_cache = self.conf.cache, mtime = self.mtimes)
 			if cached.code == 304:
 				return cached
 		else:
+			auth = self.authorise(request)
+			if auth.code == 401:
+				return auth
+			
 			cached = httputils.HTTP_Response(code = 200, headers = {}, body = "")
 		
 		return httputils.HTTP_Response(

@@ -5,6 +5,7 @@ from aiohttp import web
 from email import utils
 from collections import namedtuple
 from waterslide import multiplex
+import base64
 
 ##
 #  @defgroup httputils HTTP related utility functions/classes/definitions
@@ -60,9 +61,12 @@ def export(response):
 # @param self		Object pointer
 # @param request	The request currently being processed
 # @param filename	Source file of the request
+# @param do_cache	Whether to enable caching or not
+# @param mtime		Use this mtime instead of stat-ing it yourself
+#
 # @return		Boolean if the the client has the resource cached,
 #			so that the calling function knows what to do further
-def client_has_cached(filename, request, do_cache = True):
+def client_has_cached(filename, request, do_cache = True, mtime = None):
 
 	# decode the last modified header here instead of relying on
 	# a specific implementation which decodes it for us
@@ -75,7 +79,10 @@ def client_has_cached(filename, request, do_cache = True):
 		).replace(tzinfo=pytz.utc)
 	
 	# strip of the microseconds, so we can compare the objects without having to round.
-	lm = datetime.utcfromtimestamp(os.path.getmtime(filename)).replace(tzinfo=pytz.utc, microsecond = 0)
+	
+	tstamp = mtime or os.path.getmtime(filename)
+	
+	lm = datetime.utcfromtimestamp(tstamp).replace(tzinfo=pytz.utc, microsecond = 0)
 	
 	if do_cache and imsp == lm:
 	
@@ -204,12 +211,13 @@ def decode_basic_auth(header, fail = basicauth(None, None)):
 		
 	try:
 		astr = base64.b64decode(auth[1]).decode().split(':', 1)
-	except:
+	except Exception as f:
 		print("Malformed Authentication header")
+		print(f)
 		return fail
 	
 	if len(astr) != 2:
 		return fail
 	
-	return basicauth(*astr)
+	return basicauth(uname = astr[0], passwd = astr[1])
 

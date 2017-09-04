@@ -71,49 +71,65 @@ class mh_sha512:
 	def verify(plain, digest):
 		return digest == mh_sha512.encrypt(plain)
 
+## Available hashing algorithms
 algs_avail = {
-"sha512": mh_sha512,
+	"sha512": mh_sha512,
 }
+
 ## Class used to configure multiplexing. Behaves largely as a named tuple,
 # but it handles defaults
 class MConf:
 	
+	## default randomness length for the secret
 	deflen = 16
 	
+	## Whether to enable multiplexing
 	do_multiplex = False
+	## Whether to start the multiplex server. Will be started regardless
+	# of this value if do_multiplex is true
 	just_serve = False
 	
+	## Multiplex server address
 	MX_server = 'http://' + get_ip_addr() + ':9090'
+	
+	## Current randomness length
 	rlen = 16
+	
+	## Hashing class to use for the socket ID
 	htype = mh_sha512
 	
+	## Whether to autoslave clients
 	autoslave = False
+	
+	## Whether to trace the multiplex "frames"
+	trace = False
 
 	@property
 	def startserver(self):
 		return self.do_multiplex or self.just_serve
 	
 	helptext = '''
--m, --multiplex         Enable multiplexing of presentations. This enables a
+-m, --multiplex         Enable multiplexing of all presentations. This enables a
                         Socket.io server, and adds the configuration to the
-                        presenations. Pass the "master" query in the url to
-                        obtain control of the presenation
-                        (e.g.: localhost/?master)
+                        presenations.
 --multiplex-length	Amount of random characters to request for
                         the hash input
 -X, --multiplex-server  Server to point the multiplex url to. Will default to
                         the local machine's ip address and port number if not
                         configured
---just-serve            Startup the multiplex server, but do not configure the
+-M, --just-serve        Startup the multiplex server, but do not configure the
                         presentations to multiplex. This is useful for server
                         deployments, where the server (besides serving
                         presentations) also functions as a remote multiplexing
-                        server.
+                        server, when multiplexing for those presentations is
+                        enabled through a configuration file
 
 --autoslave             Autoslave any client which isn't a master. Is the
                         default for the serve subcommand
 --no-autoslave          Disable autoslaving. Is the default for the
                         manage subcommand
+
+--trace                 Enable tracing of multiplex frames to stdout
 
 -A, --mh_algorithm      Configure the hashing algorithm used to transform the
                         automatically generated secret to a socket ID.
@@ -142,7 +158,7 @@ class MConf:
 			
 			self.MX_server = temp
 			ret = 2
-		elif argv[argn] in ("--just-serve",):
+		elif argv[argn] in ("-M", "--just-serve"):
 			self.just_serve = True
 			return 1
 		elif argv[argn] == "--autoslave":
@@ -150,6 +166,9 @@ class MConf:
 			ret = 1
 		elif argv[argn] == "--no-autoslave":
 			self.autoslave = False
+			ret = 1
+		elif argv[argn] == "--trace":
+			self.trace = True
 			ret = 1
 		else:
 			return 0
@@ -180,7 +199,8 @@ def start_socket_io(app, mconf):
 			print(t, "refused to forward for", sid)
 			return
 
-		print(t, data['socketId'][:10], data['state'])
+		if mconf.trace == True:
+			print(t, data['socketId'][:10], data['state'])
 		
 		# protect the secret
 		data['secret'] = None

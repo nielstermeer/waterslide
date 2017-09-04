@@ -1,0 +1,6 @@
+multiplex:
+ enabled: true
+ autoslave: false
+# auth:
+#  passwd: niels
+#  uname: niels
