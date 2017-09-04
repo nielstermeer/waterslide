@@ -369,7 +369,8 @@ class Presentation:
 				(self.config.get('scripts') or []) +
 				# only add head.js if we actually have plugins, or when we're multiplexing
 				([self.basepath + "/lib/js/head.min.js"]
-					if (self.config.get('plugins') or self.conf.mconf.do_multiplex) else []) +
+					if (	self.config.get('plugins') or 
+						self.do_multiplex(request)) else []) +
 				[self.basepath + "/js/reveal.js"]
 				),				
 			"<script>Reveal.initialize({});</script>".format(
@@ -460,9 +461,9 @@ class HTTP_Presentation(Presentation):
 		slave  = request.url.query.get('slave')
 		
 		lmconf = self.sconf.get('multiplex', {})
-		
+
 		# Multiplexing is disabled
-		if not (self.conf.mconf.do_multiplex or lmconf.get('enabled')):
+		if self.conf.mconf.do_multiplex == False and lmconf.get('enable') != True:
 			return False
 		
 		# Client is not a master
@@ -661,7 +662,7 @@ class HTTP_Presentation(Presentation):
 		self.reload()
 
 		# only cache the html when we're not multiplexing
-		if not self.conf.mconf.do_multiplex and not self.sconf.get('multiplex', {}).get('enabled'):
+		if not self.do_multiplex(request):
 			cached = httputils.client_has_cached(fname, request, do_cache = self.conf.cache, mtime = self.mtimes)
 			if cached.code == 304:
 				return cached
