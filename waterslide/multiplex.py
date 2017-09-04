@@ -71,9 +71,21 @@ class mh_sha512:
 	def verify(plain, digest):
 		return digest == mh_sha512.encrypt(plain)
 
+## Wrapper to standarise multiplex secrets and socketId's. Wraps sha512.
+#
+# This kind of wrapper is useful for when other hashes are an option, since
+# these wrappers provide a standarised interface.
+class mh_md5:
+	def encrypt(plain):
+		return hashlib.md5(bytes(plain, 'utf-8')).hexdigest()
+	
+	def verify(plain, digest):
+		return digest == mh_md5.encrypt(plain)
+
 ## Available hashing algorithms
 algs_avail = {
 	"sha512": mh_sha512,
+	"md5"	: mh_md5,
 }
 
 ## Class used to configure multiplexing. Behaves largely as a named tuple,
@@ -96,7 +108,7 @@ class MConf:
 	rlen = 16
 	
 	## Hashing class to use for the socket ID
-	htype = mh_sha512
+	htype = mh_md5
 	
 	## Whether to autoslave clients
 	autoslave = False
@@ -133,8 +145,8 @@ class MConf:
 
 -A, --mh_algorithm      Configure the hashing algorithm used to transform the
                         automatically generated secret to a socket ID.
-                        Currently, only "bcrypt" is available, but this option
-                        is provided for forwards compatability
+                        Available algorithms are md5 and sha512, of which
+                        md5 is the default algorithm
 '''
 	def parse(self, argn):
 		
@@ -144,11 +156,13 @@ class MConf:
 		elif argv[argn] == "--multiplex-length":
 			self._rlen = argv[argn+1]
 			ret = 2
-		elif argv[argn] in ('-A','--mh_algorithm') \
-		 and argv[argn] in algs_avail.keys():
+		elif argv[argn] in ('-A','--mh_algorithm'):
 		 
-			self.htype = algs_avail[argv[argn]]
-			ret = 2
+			if argv[argn+1] in algs_avail.keys():
+				self.htype = algs_avail[argv[argn]]
+				ret = 2
+			else:
+				ret = 1
 		elif argv[argn] in ("-X", "--multiplex-server"):
 			
 			temp = argv[argn+1]
