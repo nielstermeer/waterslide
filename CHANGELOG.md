@@ -19,6 +19,35 @@ here too.
 
 # [UNRELEASED]
 
+# [0.2.0] 2017-9-4
+## Added
+- Password protection of presentation master control with BasicAuth and a
+  presentation config file (conf.yaml)
+- cmdline flag to enable tracing of multiplexing messages (which heretofore
+  always happened, now disabled by default.)
+- Multiplexing sessions, to be able to run multiple presentations in
+  parallel without the controls clashing
+- sha512 and md5 as socket-id hashing algorithms
+- cmdline flags to enable/disable autoslaving of presentation requests which
+  aren't masters
+- Manager subcommand, to automatically manage (and cache) presentations in
+  a document root. Presentations within this document root can be
+  added/changed/removed at will.
+- Configuration dump subcommand, to get paths to resources which can then be
+  served by another webserver
+- Disabling static routes now possible, for when a _real_ webserver handles it
+
+## Changed
+- Default hashing algorithm is now md5 insteadof bcrypt
+
+## Fixed
+- Head.js is now included when multiplexing is the only plugin
+- send_direct() reads files as binary insteadof text
+
+## Removed
+- WaterSlide no longer searches by itself for a local reveal.js repository
+- Bcrypt as a socket-id hashing algorithm
+
 # [0.1.0] 2017-8-27
 Bumped version number to get in line with semver.
 
