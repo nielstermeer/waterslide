@@ -16,3 +16,6 @@ waterslide.egg-info/
 # build stuff
 build/
 dist/
+
+# vim .swp files
+*.swp
