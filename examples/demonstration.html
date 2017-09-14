@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<!--
+ - (C) 2017 Niels ter Meer
+ - This file is part of the WaterSlide presentation program
+ -
+ - This Source Code Form is subject to the terms of the Mozilla Public
+ - License, v. 2.0. If a copy of the MPL was not distributed with this
+ - file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ -->
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>WaterSlide Demonstration</title>
+<link href="https://fonts.googleapis.com/css?family=Montserrat" rel="stylesheet"> 
+
+<style>
+html, body {
+	background-color: rgb(20,20,20);
+	width: 100%;
+	margin: 0;
+	padding: 1em;
+	box-sizing: border-box;
+}
+
+#content {
+	text-align: center;
+	width: 30em;
+	margin: auto;
+	font-family: 'Montserrat', sans-serif;
+	color: rgb(250,250,250);
+}
+
+@media (max-width: 1080px) {
+	#content {
+		width: 95%;
+	}
+}
+
+.container {
+	width: 100%;
+	padding-top: 56.25%;
+	position: relative; /* If you want text inside of it */
+	margin-top: 1em;
+}
+
+.wsiframe {
+	position: absolute;
+	top: 0;
+	left: 0;
+	bottom: 0;
+	right: 0;
+	/* Fill the container fully with the iframe */
+	width: 100%;
+	height: 100%;
+}
+
+#text {
+	max-width: 30em;
+	margin: auto;
+}
+</style>
+</head>
+<body>
+
+<div id="content">
+<h1 id="header">WaterSlide multiplexing demonstration</h1>
+
+<p>You might have been pointed here by someone for a demonstration of the
+multiplexing feature of the WaterSlide presentation program.</p>
+
+<p>Below these paragraphs, you'll find two so called "iframes". These "inline frames"
+are used to embed another webpage into another. You might recognise these as the
+technology used to show advertisements, or the way Youtube embeds video's into
+webpages.</p>
+
+<p>These Iframes (in this case) represent two devices. One of these could be a
+laptop hooked up to a beamer. The other one could be your smartphone. You could
+then use said smartphone to walk around and present, and letting the laptop take
+care of the beamer. You could also use the laptop for keyboard control, when
+necessary</p>
+
+<p>Both of these Iframes are set up to be so called "masters" of the
+presentation. If you go to the next slide (arrow keys, or swipes) in one
+presentation, the other one will follow. There is also a slave option, which
+will cause the slide configured as a slave to follow the master presentation.</p>
+
+<div class="container"><iframe class="wsiframe" id="prim"></iframe></div>
+<div class="container"><iframe class="wsiframe" id="sec"></iframe></div>
+
+</div>
+<script>
+	// add the proper links, and ensure that demonstrations don't clash
+	var lnk = "example/?master=demonstration_" + (Math.random()*1e32).toString(36);
+	document.getElementById("prim").src = lnk;
+	document.getElementById("sec").src  = lnk;
+</script>
+</body>
+</html>
