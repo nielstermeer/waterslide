@@ -140,19 +140,17 @@ used as a multiplexed presentation.
 
 ## Password protection
 Each presentation can be protected by a username:password combination with
-http-basicauth, with the credentials stored in plain-text[^ptcredentials] in the
-configuration file. (under multiplex.auth.{uname, passwd})
+http-basicauth, with the credentials stored in plain-text in the configuration
+file. (under multiplex.auth.{uname, passwd})
 
+### On Security
+Yes I know, generally storing passwords in plain text is a very-bad-idea(tm).
+But these credentials are not to be used to store highly sensitive information,
+but to thwart attacks from aspiring dictators which see the '?master' query. I
+thought it was important to have an easily configurable configuration file than
+to have _super_ _secure_ credential system. For those whising for hashed
+passwords, fear not, I'm mulling over how to do this nicely without interfering
+with "the simple way"(tm).
 
 # Licence
 This program is licensed under the Mozilla Public License, version 2.0.
-
-
-
-[^ptcredentials]: Yes I know, generally storing passwords in plain text is a
-very-bad-idea(tm). But these credentials are not to be used to store highly
-sensitive information, but to thwart attacks from aspiring dictators which see
-the '?master' query. I thought it was important to have an easily configurable
-configuration file than to have _super_ _secure_ credential system. For those
-whising for hashed passwords, fear not, I'm mulling over how to do this nicely
-without interfering with "the simple way"(tm).
