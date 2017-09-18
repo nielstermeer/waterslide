@@ -66,3 +66,7 @@ init:
 # - print-pdf
 plugins:
  - highlight
+
+# Favicon to link to. If left empty, WaterSlide will use the its logo as the
+# default favicon
+favicon: favicon.png

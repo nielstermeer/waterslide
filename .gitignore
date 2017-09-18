@@ -19,3 +19,8 @@ dist/
 
 # vim .swp files
 *.swp
+
+# Logos
+logo/plain.svg
+logo/logo.png
+waterslide/web-resources/logo.*

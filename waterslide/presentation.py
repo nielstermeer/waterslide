@@ -352,6 +352,11 @@ class Presentation:
 		# brute force the insertion of javascript into the object
 		return initstr.replace('"dependencies": []', "dependencies: [{}]".format(plugins))
 	
+	## Create miscellaneous head links
+	@property
+	def misc_head_links(self):
+		return	"<link rel=\"shortcut icon\" href=\"{}\" />" \
+			.format(self.config.get('favicon', '/waterslide/logo.png'))
 	## Construct the html
 	# @param self	Object pointer
 	# @param base	The actual presentation
@@ -368,6 +373,7 @@ class Presentation:
 			"<html><head><meta charset=\"utf-8\"/>",
 			"<title>" + self.title + "</title>",
 			self.stylesheet_links,
+			self.misc_head_links,
 			"</head><body>",
 			"<div class=\"reveal\"><div class=\"slides\">",
 			self.html_base,
