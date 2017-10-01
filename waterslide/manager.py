@@ -43,12 +43,12 @@ class dynamic():
 	def __init__(self, path):
 		
 		self.path = path
-		
+
 		if not self.exists:
 			return
 		
-		self.mtime = os.path.get(path)
-		self.sass = sass.compile(fname=path)
+		self.mtime = os.path.getmtime(path)
+		self.sass = sass.compile(filename=path)
 	
 	@property
 	def exists(self):
@@ -63,7 +63,10 @@ class dynamic():
 		
 		return httputils.HTTP_Response(
 			code = c.code,
-			headers = c.headers,
+			headers = {
+				**c.headers,
+				'Content-type':'text/css',
+				},
 			body = self.sass
 			)
 
@@ -93,7 +96,7 @@ class Manager():
 	# @param app	app to attach to
 	def register(self, app):
 		app.router.add_route('GET', '/{pres:.*}/', self.handle_pres)
-		app.router.add_route('GET', '/{tail:(.scss|.sass)}', self.handle_dynamic)
+		app.router.add_route('GET', '/{tail:.*\.scss}', self.handle_dynamic)
 		app.router.add_static('/', self.docroot)
 		
 		return self
@@ -123,10 +126,10 @@ class Manager():
 	# @param self	Object pointer
 	# @param path	Path to the file, relative to the document root
 	@cache.cache(valid = lambda k,v: v.exists and v.mtime == os.path.getmtime(v.path))
-	def get_dyn_ctnt(self, path):
+	def get_dyn_ctnt(self, pname):
 		
 		ppath = os.path.join(self.docroot, pname)
-		
+
 		d = dynamic(ppath)
 		
 		if d.exists:
