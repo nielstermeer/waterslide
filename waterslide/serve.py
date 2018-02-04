@@ -10,7 +10,6 @@ import os
 import re
 from urllib.parse import urlparse, urlunparse
 from aiohttp import web
-from passlib import hash
 
 from waterslide import presentation, multiplex, httputils
 
@@ -198,7 +197,6 @@ Options:
 	# presentation list
 	maybe_list = []
 	
-	mconf_hash = hash.bcrypt
 	verbose = 1
 	
 	# presenatation configuration object
