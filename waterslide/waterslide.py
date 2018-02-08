@@ -42,6 +42,8 @@ def show_version(argn):
 All these options are mutually exclusive. If more than one is given, then
 the highest option in the above list takes precedence.
 
+Buildtimes are given in Universal Coordinated Time (UTC)
+
 example (for in source directory):
 git checkout `waterslide version --commit` # checkout commit this was build from
 git checkout `waterslide version --release`# checkout base release"""
@@ -62,7 +64,7 @@ git checkout `waterslide version --release`# checkout base release"""
 	elif "--pep440" in args:
 		print(v.pep440())
 	else:
-		print("waterslide v{} ({})".format(v.human(), v.btime()))
+		print("waterslide v{} ({} UTC)".format(v.human(), v.btime()))
 		print("Copyright (C) Niels ter Meer")
 
 

@@ -38,7 +38,7 @@ def parse_vstring(vstr):
 ## Generatie a distribution/release json structure
 def generate_data_file(skip_data_file = False):
 	data = {
-		'version': version(skip_data_file).human(),
+		'version': version(skip_data_file).describe(),
 		'buildtime': time.time(),
 	}
 	return json.dumps(data)

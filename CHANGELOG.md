@@ -18,6 +18,12 @@ command, in the format of `<semver>[.dev<distance>]`. The above rules apply
 here too.
 
 # [UNRELEASED]
+## Changed
+- Explicitly tell the buildtime is show in utc
+
+## Fixed
+- Use the describe() method instead of the human() method on the version object
+  during the build process; fails on `--version` down the line otherwise.
 
 # [0.2.1] 2018-2-8
 ## Added
