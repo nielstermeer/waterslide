@@ -210,7 +210,9 @@ class Presentation:
 		if not os.path.exists(path):
 			raise ImportError('Presenatation source file does not exist')
 		
-		with open(path , 'r') as f:
+		# Explicitly import as utf-8, as to prevent import errors when python
+		# tries to import as ascii or something else.
+		with open(path , mode="r", encoding="utf-8") as f:
 		
 			fctnt = f.read()
 		
