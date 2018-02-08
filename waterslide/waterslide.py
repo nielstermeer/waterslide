@@ -6,6 +6,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 from sys import argv
+import sys
 import os
 from waterslide import serve, presentation, version, manager
 import datetime, time
@@ -46,27 +47,22 @@ git checkout `waterslide version --commit` # checkout commit this was build from
 git checkout `waterslide version --release`# checkout base release"""
 	
 	args = argv[argn:]
-	v = version.version
-	
-	t = version.buildtime
-	tf =  datetime.datetime.fromtimestamp(
-			int(t)
-		).strftime('%Y-%m-%d %H:%M:%S')
+	v = version.version()
 	
 	if "--help" in args:
 		print(helptext)	
 	elif "--describe" in args:
-		print("v" + '-'.join(v))
+		print("v" + v.describe())
 	elif "--btime" in args:
-		print(tf)
+		print(v.btime())
 	elif "--release" in args:
-		print("v" + version.human())
+		print("v" + v.human())
 	elif "--commit" in args:
-		print(v.commit)
+		print(v.commit())
 	elif "--pep440" in args:
-		print(version.pep440())
+		print(v.pep440())
 	else:
-		print("waterslide v{} ({})".format(version.human(), tf))
+		print("waterslide v{} ({})".format(v.human(), v.btime()))
 		print("Copyright (C) Niels ter Meer")
 
 

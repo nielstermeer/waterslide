@@ -38,7 +38,7 @@ class dyn_data(build_py):
 with open('README.md', 'r') as f:
 	desc = f.read()
 
-v = version.pep440()
+v = version.version().pep440()
 
 if not v:
 	print("Could not obtain a valid version number")
