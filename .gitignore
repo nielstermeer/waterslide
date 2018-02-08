@@ -24,3 +24,7 @@ dist/
 logo/plain.svg
 logo/logo.png
 waterslide/web-resources/logo.*
+
+# data.json file is used for versioning information in docker, but we don't
+# want to have it end up in the repository
+data.json

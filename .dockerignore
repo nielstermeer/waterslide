@@ -1,0 +1,24 @@
+.git/
+.gitignore
+
+# don't ignore the data.json file, for it is used for versioning.
+
+.dockerignore
+Dockerfile
+
+build/
+dist/
+doc/
+env/
+waterslide.egg-info/
+waterslide/__pycache__/
+setup.py
+
+examples/
+logo/
+
+README.*
+Changelog.*
+LICENCE
+Doxyfile
+Makefile

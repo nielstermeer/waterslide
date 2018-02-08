@@ -30,6 +30,12 @@ waterslide/web-resources/logo.svg: logos
 logos:
 	make -C $(LOGO_D)
 
+data.json:
+	python3 version.py
+
+image: logos webrsc data.json
+	docker build . -t waterslide
+
 clean:
-	rm -rf $(wildcard html latex build dist waterslide.egg-info)
+	rm -rf $(wildcard html latex build dist waterslide.egg-info data.json)
 	make -C $(LOGO_D) clean
