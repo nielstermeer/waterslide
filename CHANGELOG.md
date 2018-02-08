@@ -19,6 +19,13 @@ here too.
 
 # [UNRELEASED]
 
+# [0.2.1] 2018-2-8
+## Added
+- Docker support
+
+## Changed
+- Import presentations as utf-8
+
 # [0.2.0] 2017-9-4
 ## Added
 - Password protection of presentation master control with BasicAuth and a

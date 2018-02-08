@@ -97,6 +97,13 @@ waterslide manage -M .
 waterslide manage -M -X https://slides.example.com .
 ~~~~~~
 
+# Docker support
+Waterslide has support for docker. The invocation is the same, besides that the
+document root is always "/webroot", and that the actual document root on the host
+should be mounted onto that location in the container.
+
+The advantage of this method is that it is isolated from the host system, and that
+one doesn't have to bother with virtual enviroments on the server.
 
 # SASS/SCSS stylesheets
 WaterSlide will automatically transpile sass and scss stylesheets to css upon
